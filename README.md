@@ -15,10 +15,10 @@ A free alternative to Sound Radix Auto-Align Post, built for creative use.
 | `.github/workflows/build.yml` | Windows build: engine test, VST3 + standalone, zip, release |
 
 ## Build locally (Windows)
-Visual Studio 2022 + CMake 3.22+ and `nuget` on PATH:
+Visual Studio 2022 or newer + CMake 3.22+ and `nuget` on PATH:
 ```
 python tools/build_ui.py
-cmake -B build -G "Visual Studio 17 2022" -A x64
+cmake -B build -A x64
 cmake --build build --config Release --target AlignMalign_VST3
 ```
 
