@@ -47,6 +47,7 @@ public:
     juce::AudioProcessorValueTreeState apvts;
     void setParamFromUI(const juce::String& id, const juce::var& value);
     void toggleLearn();
+    void installLiveScript();
     juce::var makeUIState();               // params + session status + meters for the web UI
     juce::String scope() const { return scope_; }
 
@@ -88,7 +89,12 @@ private:
 
     juce::AudioParameterFloat *pAlign_, *pMatch_, *pWidth_, *pMotion_, *pMix_;
     juce::AudioParameterChoice* pFlavour_;
-    juce::AudioParameterBool *pAB_, *pDelta_;
+    juce::AudioParameterBool *pAB_, *pDelta_, *pLatAuto_;
+    juce::AudioParameterFloat *pLatMs_, *pLinkId_;
+    int linkId_ = 0;                                   // identifies this instance to the Live control surface
+    juce::String latSource_ = "none", latTrack_, msg_; // shown on the Pro page
+    double latUsedMs_ = 0;
+    bool msgOk_ = true;
 
     friend class AlignMalignEditor;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AlignMalignProcessor)

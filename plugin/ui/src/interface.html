@@ -1285,7 +1285,10 @@ const PRO=[
    {t:'select',k:'mode',name:'Behaviour over time',opts:['Static','Adaptive'],v:0},
    {t:'range',k:'stiff',name:'Anchor stiffness',min:0,max:1,step:0.01,v:0.5,fmt:v=>`${Math.round(v*100)}%`},
    {t:'select',k:'anchor',name:'Anchor track',opts:['Auto','Bass A','Bass B','Kick','Lead vox'],v:0},
-   {t:'switch',k:'guard',name:'Never make it worse',v:true,hint:'Skips any band where alignment would lose energy.'}]},
+   {t:'switch',k:'guard',name:'Never make it worse',v:true,hint:'Skips any band where alignment would lose energy.'},
+   {t:'switch',k:'latAuto',name:'Latency before this track: read from Live',v:true,hint:'Adds up the delay of every synth and plugin in front of Auto Malign on this track, so it can sit last in the chain. Needs the Auto Malign control surface in Live.'},
+   {t:'range',k:'latMs',name:'Latency before this track (manual)',min:0,max:250,step:0.1,v:0,fmt:v=>`${v.toFixed(1)} ms`,hint:'Used when Live can\'t be read (Studio One, or the control surface is off). Add up the latency of the synth and plugins before Auto Malign.'},
+   {t:'action',k:'installLive',name:'Install the Live control surface',label:'Install for Ableton Live',hint:'Copies the Auto Malign script into your Live User Library. Then pick Auto Malign under Settings > Link, Tempo & MIDI > Control Surface.'}]},
  {name:'Match',lead:'Keeps level and tone honest so you hear phase, not loudness.',fields:[
    {t:'switch',k:'oneone',name:'1:1 compensation',v:true,hint:'Linear-phase EQ on stereo power, matched to the bypassed sound.'},
    {t:'switch',k:'dlisten',name:'Delta listen',v:false},
@@ -1324,7 +1327,8 @@ const PRO=[
         editable(out,{get:()=>f.v,fmt:v=>v,parse:t=>{const n=num(t);if(n==null)return null;const sc=/khz/i.test(t)?1000:1;return n*sc;},set:v=>{inp.value=clamp(v,f.min,f.max);upd();if(f.link)MAC[f.link].set(f.v);}});
         if(f.def===undefined)f.def=f.v;inp.title='Ctrl+click to reset';
         inp.addEventListener('pointerdown',e=>{if(e.ctrlKey||e.metaKey){e.preventDefault();if(f.link){MAC[f.link].reset();inp.value=MAC[f.link].get();}else inp.value=f.def;upd();}});
-        inp.addEventListener('input',()=>{upd();if(f.link)MAC[f.link].set(f.v);});}
+        inp.addEventListener('input',()=>{upd();if(f.link)MAC[f.link].set(f.v);f.on&&f.on(f.v);});}
+      else if(f.t==='action'){box.innerHTML=`<div class="row"><label></label></div><button type="button" id="${idf}"></button>`;box.querySelector('label').textContent=f.name;const bt=box.querySelector('button');bt.textContent=f.label||f.name;bt.addEventListener('click',()=>{f.on&&f.on();});}
       else if(f.t==='select'){box.innerHTML=`<div class="row"><label for="${idf}"></label></div><select id="${idf}"></select>`;box.querySelector('label').textContent=f.name;const sel=box.querySelector('select');
         f.opts.forEach((o,k)=>{const op=document.createElement('option');op.value=k;op.textContent=o;sel.appendChild(op);});sel.value=f.v;sel.addEventListener('change',()=>{f.v=+sel.value;f.on&&f.on(f.v);});}
       else{box.innerHTML=`<label class="switch"><input type="checkbox" id="${idf}"><span></span></label>`;box.querySelector('span').textContent=f.name;const cb=box.querySelector('input');cb.checked=f.v;cb.addEventListener('change',()=>{f.v=cb.checked;f.on&&f.on(f.v);});}

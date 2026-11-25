@@ -31,12 +31,13 @@ jobs:
         run: cmake -B build -S . -A x64 -DALIGNMALIGN_BUILD_TESTS=ON
 
       - name: Build
-        run: cmake --build build --config Release --parallel --target am_engine_test am_convolver_test AlignMalign_VST3 AlignMalign_Standalone
+        run: cmake --build build --config Release --parallel --target am_engine_test am_convolver_test am_latency_test AlignMalign_VST3 AlignMalign_Standalone
 
       - name: Engine tests
         run: |
           build\Release\am_engine_test.exe
           build\Release\am_convolver_test.exe
+          build\Release\am_latency_test.exe
 
       - name: Package
         shell: pwsh
@@ -46,6 +47,8 @@ jobs:
           Copy-Item -Recurse "$art/VST3/Auto Malign.vst3" "dist/Auto Malign.vst3"
           Copy-Item "$art/Standalone/Auto Malign.exe" "dist/Auto Malign (standalone).exe"
           Copy-Item docs/INSTALL.md dist/INSTALL.md
+          New-Item -ItemType Directory -Force "dist/Ableton Live control surface/AutoMalign" | Out-Null
+          Copy-Item live/AutoMalign/__init__.py "dist/Ableton Live control surface/AutoMalign/__init__.py"
           Compress-Archive -Path dist/* -DestinationPath AutoMalign-Windows-x64.zip -Force
 
       - uses: actions/upload-artifact@v4

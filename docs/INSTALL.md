@@ -24,9 +24,15 @@
    (ARA2 mode for Studio One, which skips the Learn pass, is the next milestone.)
 
 ## Good to know
-- **Put Auto Malign first** on each track, or at least before any plugin that adds latency (look-ahead limiters,
-  linear-phase EQs). The plugin can't see the latency of plugins in front of it, so a delayed input would be
-  learned as if the track were late.
+- **Put Auto Malign last** on each track, after your synth and effects, so it hears (and aligns) the finished sound.
+  It needs to know how much latency is in front of it on each track:
+  - **Ableton Live:** install the Auto Malign control surface once (Pro page > Alignment > *Install for Ableton Live*,
+    or copy the `Ableton Live control surface/AutoMalign` folder from the download into
+    `Documents\Ableton\User Library\Remote Scripts\`). Restart Live and choose **AutoMalign** under
+    Settings > Link, Tempo & MIDI > Control Surface. Every instance then reads its own latency automatically;
+    the Pro page shows what it found.
+  - **Studio One (or Live without the control surface):** type the latency of the synth and plugins in front of
+    Auto Malign into Pro page > Alignment > *Latency before this track (manual)*.
 - **Renamed:** the plugin is now **Auto Malign**. If you installed an earlier build, delete the old
   `Align Malign.vst3` folder from `C:\Program Files\Common Files\VST3\` before copying the new one.
 - **Ctrl+click** any knob or slider to reset it to its default (the main knob goes back to 0).

@@ -50,6 +50,12 @@
   const claim = () => { const t = performance.now(); if (t - lastClaim > 250) { lastClaim = t; act('activate'); } };
   for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel', 'focus']) addEventListener(ev, claim, { passive: true });
 
+  // Pro > Alignment: latency before this track (read from Live, or typed in), and the Live script installer
+  const pf = k => PRO[0].fields.find(f => f.k === k);
+  pf('latAuto').on = v => send('latAuto', v);
+  pf('latMs').on = v => send('latMs', v);
+  pf('installLive').on = () => act('installLive');
+
   // Learn: one button in the status bar drives the whole session
   const learn = document.getElementById('learn');
   learn.addEventListener('click', () => act('learn'));
@@ -57,7 +63,7 @@
   // ---- plugin -> UI
   const cap = document.querySelector('.pyrbox .cap');
   const sig = document.getElementById('sig');
-  let wasLearning = null, wasSolved = null;
+  let wasLearning = null, wasSolved = null, lastMsg = '';
   const press = (sel, on) => { const b = document.querySelector(sel); if (b) b.setAttribute('aria-pressed', on ? 'true' : 'false'); };
 
   J.backend.addEventListener('state', s => {
@@ -78,6 +84,23 @@
         if ((b.getAttribute('aria-pressed') === 'true') !== !!s[id]) { b.setAttribute('aria-pressed', s[id] ? 'true' : 'false'); P[id] = !!s[id]; }
       }
       document.querySelectorAll('#scope button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === s.scope ? 'true' : 'false'));
+
+      // latency before this track
+      const la = pf('latAuto'), lm = pf('latMs');
+      la.v = !!s.latAuto;
+      if (!fresh('latMs')) lm.v = s.latMs;
+      const cb = document.getElementById('pf-latAuto');
+      if (cb) {
+        cb.checked = la.v;
+        const hint = cb.closest('.field')?.querySelector('.hint');
+        if (hint) hint.textContent = s.latSource === 'live' ? `Live reports ${s.latUsedMs.toFixed(1)} ms in front of Auto Malign on "${s.latTrack}".`
+          : s.latSource === 'manual' ? `Using your manual value: ${s.latUsedMs.toFixed(1)} ms.`
+          : s.liveSeen ? 'Live is connected, but this instance was not found yet. Keep the transport running a moment.'
+          : 'Live control surface not detected. Install it below, or type the latency manually.';
+      }
+      const rg = document.getElementById('pf-latMs');
+      if (rg && !fresh('latMs') && document.activeElement !== rg) { rg.value = lm.v; rg.dispatchEvent(new Event('input')); }
+      if (s.msg && s.msg !== lastMsg) { lastMsg = s.msg; toast(s.msgOk ? 'ok' : 'warn', s.msg); }
 
       // the scene and meters follow the real output
       AU.ext = 1; AU.extT = performance.now(); AU.extB = s.bands || []; AU.extL = s.level || 0;

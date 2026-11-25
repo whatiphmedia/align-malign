@@ -48,10 +48,15 @@ public:
 
     int id() const { return id_; }
     SlotControls controls;
+    void setUpstreamLatency(int64_t samples) { upstreamLatency_.store(std::max<int64_t>(0, samples)); }
+    int64_t upstreamLatency() const { return upstreamLatency_.load(); }
 
     // ---- audio thread ------------------------------------------------------
     // mono: mid signal for this block. pos: host timeline position of the first sample (samples).
+    // The audio reaching this instance is late by the latency of everything in front of it on its track
+    // (synths, effects); that amount is subtracted so every track is learned at its true song position.
     void write(const float* mono, int n, int64_t pos, bool playing, bool learning) noexcept {
+        if (pos >= 0) pos -= upstreamLatency_.load(std::memory_order_relaxed);
         if (!playing || !learning || pos < 0) { expectNext_ = -1; return; }
         if (pos != expectNext_) validFrom_ = pos;   // transport jump / loop: restart contiguity
         expectNext_ = pos + n;
@@ -89,6 +94,7 @@ private:
     std::vector<float> ring_;
     std::vector<std::atomic<int64_t>> stamp_;
     std::atomic<int64_t> latest_{-1};
+    std::atomic<int64_t> upstreamLatency_{0};
     int64_t expectNext_ = -1, validFrom_ = 0;  // audio-thread only
 };
 

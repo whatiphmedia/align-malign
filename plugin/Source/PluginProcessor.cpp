@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "BinaryData.h"
 #include <deque>
 
 namespace {
@@ -36,6 +37,63 @@ struct LinkHub {
     std::map<juce::String, Ev> latest;
 };
 
+// Receives the Auto Malign Live control surface's reports (UDP, localhost): for every Auto Malign instance found in
+// the set, the latency of everything in front of it on its track. One listener per process, alive while any
+// instance exists (started by the first, stopped by the last; never torn down during DLL unload).
+class LiveLink : private juce::Thread {
+public:
+    struct Info { int latency = 0; juce::String track; double when = 0; };
+    static LiveLink& get() { static LiveLink l; return l; }
+
+    void retain() { const std::lock_guard<std::mutex> g(m_); if (refs_++ == 0) startThread(); }
+    void release() {
+        bool stop = false;
+        { const std::lock_guard<std::mutex> g(m_); stop = (--refs_ == 0); }
+        if (stop) { signalThreadShouldExit(); stopThread(1500); }
+    }
+    bool lookup(int id, Info& out) const {
+        const std::lock_guard<std::mutex> g(m_);
+        auto it = map_.find(id);
+        if (it == map_.end() || now() - it->second.when > 3000.0) return false;
+        out = it->second;
+        return true;
+    }
+    bool seen() const { const std::lock_guard<std::mutex> g(m_); return now() - lastPacket_ < 3000.0; }
+
+private:
+    LiveLink() : juce::Thread("Auto Malign Live link") {}
+    static double now() { return juce::Time::getMillisecondCounterHiRes(); }
+
+    void run() override {
+        std::vector<char> buf(65536);
+        while (!threadShouldExit()) {
+            juce::DatagramSocket sock(false);
+            if (!sock.bindToPort(47863, "127.0.0.1")) { wait(2000); continue; }   // port busy: try again later
+            while (!threadShouldExit()) {
+                if (sock.waitUntilReady(true, 200) != 1) continue;
+                const int n = sock.read(buf.data(), (int)buf.size() - 1, false);
+                if (n > 0) parse(juce::String::fromUTF8(buf.data(), n));
+            }
+        }
+    }
+    void parse(const juce::String& text) {
+        const auto v = juce::JSON::parse(text);
+        if (!v.isObject() || (int)v["am"] != 1) return;
+        const std::lock_guard<std::mutex> g(m_);
+        lastPacket_ = now();
+        if (auto* arr = v["tracks"].getArray())
+            for (auto& t : *arr) {
+                Info i; i.latency = juce::jmax(0, (int)t["latency"]); i.track = t["track"].toString(); i.when = lastPacket_;
+                map_[(int)t["id"]] = i;
+            }
+    }
+
+    mutable std::mutex m_;
+    int refs_ = 0;
+    std::map<int, Info> map_;
+    double lastPacket_ = -1e9;
+};
+
 const char* kLinked[] = { "alignment", "match", "width", "motion", "mix", "flavour", "ab", "delta" };
 
 juce::String floatsToBase64(const std::vector<float>& v) {
@@ -69,6 +127,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout AlignMalignProcessor::create
     l.add(std::make_unique<AudioParameterChoice>(ParameterID{ "flavour", 1 }, "Flavour", flavourNames(), 0));
     l.add(std::make_unique<AudioParameterBool>(ParameterID{ "ab", 1 }, "A/B (hear original)", false));
     l.add(std::make_unique<AudioParameterBool>(ParameterID{ "delta", 1 }, "Delta", false));
+    // Latency in front of this instance (synths/plugins before it on the track): read from Live, or typed in.
+    l.add(std::make_unique<AudioParameterBool>(ParameterID{ "latauto", 1 }, "Latency before: from Live", true));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "latms", 1 }, "Latency before (manual)",
+                                                NormalisableRange<float>(0.f, 250.f, 0.01f), 0.f,
+                                                AudioParameterFloatAttributes().withLabel("ms")));
+    // Identifies this instance to the Live control surface (set automatically; not something to automate).
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "linkid", 1 }, "Link ID", NormalisableRange<float>(0.f, 1.f), 0.f));
     return l;
 }
 
@@ -85,7 +150,12 @@ AlignMalignProcessor::AlignMalignProcessor()
     pFlavour_ = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("flavour"));
     pAB_ = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("ab"));
     pDelta_ = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("delta"));
-    jassert(pAlign_ && pMatch_ && pWidth_ && pMotion_ && pMix_ && pFlavour_ && pAB_ && pDelta_);
+    pLatAuto_ = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("latauto"));
+    pLatMs_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("latms"));
+    pLinkId_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("linkid"));
+    jassert(pAlign_ && pMatch_ && pWidth_ && pMotion_ && pMix_ && pFlavour_ && pAB_ && pDelta_ && pLatAuto_ && pLatMs_ && pLinkId_);
+    linkId_ = juce::Random::getSystemRandom().nextInt(juce::Range<int>(1, 99999));
+    LiveLink::get().retain();
 
     for (auto* c : { &convMid_, &convSide_, &convMidM_, &convSideM_ }) {
         *c = std::make_unique<am::PartitionedConvolver>(am::kIRLen);
@@ -101,6 +171,7 @@ AlignMalignProcessor::AlignMalignProcessor()
 
 AlignMalignProcessor::~AlignMalignProcessor() {
     stopTimer();
+    LiveLink::get().release();
     am::SessionBus::get().leave(slot_); // clears onIR under the bus lock, so no callback can arrive after this
 }
 
@@ -235,6 +306,19 @@ void AlignMalignProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
 // ---------------------------------------------------------------- message thread
 void AlignMalignProcessor::timerCallback() {
     auto& bus = am::SessionBus::get();
+    // 0) publish this instance's Link ID (a duplicated track copies the old value, so it is re-asserted) and work out
+    //    how late this track's audio arrives: from Live's control surface, else the manual value, else zero.
+    const float wantId = (float)linkId_ / 100000.f;
+    if (std::abs(pLinkId_->get() - wantId) > 1e-7f) pLinkId_->setValueNotifyingHost(pLinkId_->convertTo0to1(wantId));
+    {
+        LiveLink::Info info;
+        int lat = 0;
+        if (pLatAuto_->get() && LiveLink::get().lookup(linkId_, info)) { lat = info.latency; latSource_ = "live"; latTrack_ = info.track; }
+        else if (pLatMs_->get() > 0.f) { lat = juce::roundToInt(pLatMs_->get() * 0.001 * sampleRate_); latSource_ = "manual"; }
+        else latSource_ = "none";
+        latUsedMs_ = lat * 1000.0 / sampleRate_;
+        slot_->setUpstreamLatency(lat);
+    }
     // 1) controls -> session bus (it rebuilds this instance's IRs and the shared match EQ)
     const float knob = pAlign_->get() / 100.f;   // -100 (align) .. +100 (malign) -> -1 .. +1
     const float match = pMatch_->get();
@@ -280,6 +364,8 @@ void AlignMalignProcessor::timerCallback() {
 
 void AlignMalignProcessor::setParamFromUI(const juce::String& id, const juce::var& value) {
     if (id == "scope") { scope_ = value.toString(); return; }
+    if (id == "latAuto") { pLatAuto_->setValueNotifyingHost((bool)value ? 1.f : 0.f); return; }
+    if (id == "latMs") { pLatMs_->setValueNotifyingHost(pLatMs_->convertTo0to1((float)(double)value)); return; }
     auto* p = apvts.getParameter(id);
     if (p == nullptr) return;
     float norm = 0.f;
@@ -319,6 +405,14 @@ juce::var AlignMalignProcessor::makeUIState() {
     juce::Array<juce::var> names;
     for (auto& n : am::SessionBus::get().trackNames()) names.add(juce::String(n));
     o->setProperty("names", names);
+    o->setProperty("latAuto", pLatAuto_->get());
+    o->setProperty("latMs", pLatMs_->get());
+    o->setProperty("latSource", latSource_);
+    o->setProperty("latUsedMs", latUsedMs_);
+    o->setProperty("latTrack", latTrack_);
+    o->setProperty("liveSeen", LiveLink::get().seen());
+    o->setProperty("msg", msg_);
+    o->setProperty("msgOk", msgOk_);
     o->setProperty("inLevel", inLevel_.load());
     o->setProperty("level", juce::jmin(1.f, outLevel_.load() * 3.5f));
     return juce::var(o);
@@ -376,6 +470,21 @@ void AlignMalignProcessor::setStateInformation(const void* data, int size) {
     apvts.replaceState(state);
     stateRestored_ = true;
     lastKnob_ = 99.f; // force a push of the restored controls
+}
+
+void AlignMalignProcessor::installLiveScript() {
+    // Copies the bundled control surface into Live's User Library (Live 11+ loads user Remote Scripts from there).
+    const char* data = nullptr;
+    int size = 0;
+    for (int i = 0; i < BinaryData::namedResourceListSize; ++i)
+        if (juce::String(BinaryData::originalFilenames[i]) == "__init__.py")
+            data = BinaryData::getNamedResource(BinaryData::namedResourceList[i], size);
+    const auto dir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                         .getChildFile("Ableton").getChildFile("User Library").getChildFile("Remote Scripts").getChildFile("AutoMalign");
+    const bool ok = data != nullptr && dir.createDirectory() && dir.getChildFile("__init__.py").replaceWithData(data, (size_t)size);
+    msgOk_ = ok;
+    msg_ = ok ? "Live script installed. Restart Live, then pick AutoMalign under Settings > Link, Tempo & MIDI > Control Surface."
+              : "Couldn't write to " + dir.getFullPathName() + ". Copy the 'Ableton Live control surface' folder from the download there.";
 }
 
 juce::AudioProcessorEditor* AlignMalignProcessor::createEditor() { return new AlignMalignEditor(*this); }

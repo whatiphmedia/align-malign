@@ -35,6 +35,7 @@ AlignMalignEditor::AlignMalignEditor(AlignMalignProcessor& p) : juce::AudioProce
                         const auto name = v.getDynamicObject() ? v.getDynamicObject()->getProperty("name").toString() : v.toString();
                         if (name == "activate") gActiveEditor = editorId_;
                         else if (name == "learn") proc_.toggleLearn();
+                        else if (name == "installLive") proc_.installLiveScript();
                         else if (name == "solve") am::SessionBus::get().requestSolve();
                     });
 

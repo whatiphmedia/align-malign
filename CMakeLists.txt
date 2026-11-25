@@ -14,6 +14,11 @@ target_include_directories(am_engine INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/engin
 if(ALIGNMALIGN_BUILD_TESTS)
   add_executable(am_engine_test engine/tests/test_engine.cpp)
   target_link_libraries(am_engine_test PRIVATE am_engine)
+  add_executable(am_latency_test engine/tests/test_latency.cpp)
+  target_link_libraries(am_latency_test PRIVATE am_engine)
+  if(MSVC)
+    target_compile_definitions(am_latency_test PRIVATE _USE_MATH_DEFINES)
+  endif()
   add_executable(am_convolver_test engine/tests/test_convolver.cpp)
   target_link_libraries(am_convolver_test PRIVATE am_engine)
   if(MSVC)
@@ -68,7 +73,7 @@ juce_add_plugin(AlignMalign
 
 juce_generate_juce_header(AlignMalign)
 
-juce_add_binary_data(AlignMalignUI SOURCES plugin/ui/index.html)
+juce_add_binary_data(AlignMalignUI SOURCES plugin/ui/index.html live/AutoMalign/__init__.py)
 set_target_properties(AlignMalignUI PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_sources(AlignMalign PRIVATE
