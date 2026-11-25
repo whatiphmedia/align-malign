@@ -342,7 +342,7 @@ juce::var AlignMalignProcessor::makeUIState() {
 }
 
 void AlignMalignProcessor::updateTrackProperties(const TrackProperties& props) {
-    if (props.name.has_value() && props.name->isNotEmpty()) trackName_ = *props.name;
+    if (props.name.isNotEmpty()) trackName_ = props.name;
     am::SessionBus::get().setName(slot_, trackName_.toStdString());
 }
 
