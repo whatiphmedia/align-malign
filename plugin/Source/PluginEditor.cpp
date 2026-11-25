@@ -36,9 +36,12 @@ AlignMalignEditor::AlignMalignEditor(AlignMalignProcessor& p) : juce::AudioProce
     addAndMakeVisible(*web_);
     web_->goToURL(juce::WebBrowserComponent::getResourceProviderRoot());
 
+    // The interface scales uniformly (see bridge.js), so the window keeps the design's aspect ratio.
+    constexpr int designW = 1376, designH = 1118;
     setResizable(true, true);
-    setResizeLimits(900, 700, 2400, 1800);
-    setSize(1240, 940);
+    setResizeLimits(designW * 45 / 100, designH * 45 / 100, designW * 16 / 10, designH * 16 / 10);
+    if (auto* c = getConstrainer()) c->setFixedAspectRatio((double)designW / designH);
+    setSize(designW * 70 / 100, designH * 70 / 100);
     startTimerHz(30);
 }
 

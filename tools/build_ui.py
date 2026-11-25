@@ -32,7 +32,12 @@ s = rep(s, '<button id="sweep" aria-pressed="false"',
 s = rep(s, "</style>",
         ".plugin-only{display:none}.in-plugin .plugin-only{display:inline-flex}\n"
         ".in-plugin #aud,.in-plugin #sweep{display:none}\n"
+        "html.in-plugin,html.in-plugin body{overflow:hidden}\n"
+        "html.in-plugin body{display:block;padding:0;min-height:0}\n"
+        ".in-plugin .plugin{position:absolute;left:50%;top:18px;width:1340px;max-width:none;transform-origin:top center}\n"
         "#learn[aria-pressed=\"true\"]{background:var(--line);color:#050505}\n</style>")
+# 3b. the plugin scales the whole layout instead of reflowing it, so the narrow-window layout never applies
+s = rep(s, "@media (max-width:860px)", "@media (max-width:0px)")
 # 4. bridge inside the main script's closure (the UI's knobs and state are not globals)
 end = "\n})();\n</script>"
 i = s.rfind(end)

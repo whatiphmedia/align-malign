@@ -39,7 +39,7 @@ button[aria-pressed="true"],button[aria-current="true"]{background:var(--line);c
 button:focus-visible,input:focus-visible,select:focus-visible{outline:2px dashed var(--line);outline-offset:4px}
 .knob:focus,.knob:focus-visible,.ed:focus,.ed:focus-visible{outline:none}
 /* ---------- frame ---------- */
-.plugin{width:100%;max-width:1120px;display:grid;gap:18px;padding:18px 20px;grid-template-columns:1fr;grid-template-areas:"head" "stage" "deck" "status"}
+.plugin{width:100%;max-width:1340px;display:grid;gap:18px;padding:18px 20px;grid-template-columns:minmax(0,1fr) 210px;grid-template-areas:"head head" "stage flav" "deck flav" "status status"}
 .plugin.is-pro{grid-template-columns:1fr 400px;grid-template-rows:auto auto 1fr auto;grid-template-areas:"head head" "pro stage" "pro side" "status status"}
 header{grid-area:head;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding-bottom:12px;
   background:linear-gradient(var(--line),var(--line)) 0 100%/180px 3px no-repeat,linear-gradient(var(--dim),var(--dim)) 0 100%/100% 1px no-repeat}
@@ -77,8 +77,9 @@ header{grid-area:head;display:flex;align-items:center;gap:14px;flex-wrap:wrap;pa
 .hero .bar::before{content:"";position:absolute;inset:0;background:rgba(5,5,5,.78)}
 .hero .bar i{position:absolute;top:-1px;bottom:-1px;background:inherit;background-size:var(--bw,100%) 100%;background-position:var(--bx,0) 0;box-shadow:0 0 10px rgba(255,255,255,.15)}
 .hero .bar::after{content:"";position:absolute;left:50%;top:-5px;bottom:-5px;width:1.5px;background:var(--line)}
-.flavor{grid-column:1/-1;display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px;padding:24px 24px 20px}
-.flavor button{padding:10px 14px 11px;text-align:left}
+.flavor{grid-area:flav;display:grid;grid-template-columns:1fr;grid-auto-rows:1fr;gap:8px;padding:30px 28px 18px 26px;align-content:stretch}
+.is-pro .flavor{display:none}
+.flavor button{padding:10px 14px 11px;text-align:left;display:flex;flex-direction:column;justify-content:center}
 .flavor button>.sk{display:block}
 .flavor button small{display:block;font:500 11px/1.2 var(--ui);color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .flavor button[aria-pressed="true"] small{color:#444}
@@ -170,7 +171,7 @@ input.ed-in:focus-visible,input.ed-in:focus{outline:0}
 .ed-in::selection{background:rgba(57,230,176,.28);color:var(--align)}
 .ed-in{font:inherit;color:inherit;background:transparent;border:0;outline:0;padding:0;width:5ch;text-align:center;letter-spacing:inherit;caret-color:var(--align)}
 .hero .readout .ed-in{width:5ch;font-size:42px}
-@media (max-width:860px){.plugin.is-pro{grid-template-columns:1fr;grid-template-areas:"head" "stage" "side" "pro" "status"}.flavor{grid-template-columns:repeat(4,1fr)}.deck{grid-template-columns:1fr}.grid{grid-template-columns:1fr}.pro{grid-template-columns:1fr}.status{grid-template-columns:1fr}.hero{grid-template-columns:1fr;justify-items:center}}
+@media (max-width:860px){.plugin.is-pro{grid-template-columns:1fr;grid-template-areas:"head" "stage" "side" "pro" "status"}.plugin:not(.is-pro){grid-template-columns:1fr;grid-template-areas:"head" "stage" "deck" "flav" "status"}.flavor{grid-template-columns:repeat(4,1fr);grid-auto-rows:auto}.deck{grid-template-columns:1fr}.grid{grid-template-columns:1fr}.pro{grid-template-columns:1fr}.status{grid-template-columns:1fr}.hero{grid-template-columns:1fr;justify-items:center}}
 @media (prefers-reduced-motion:reduce){.switch input::after{transition:none}}
 </style>
 </head>
@@ -215,7 +216,8 @@ input.ed-in:focus-visible,input.ed-in:focus{outline:0}
       <div class="mk"><div class="knob" id="k-motion" tabindex="0"></div><div class="lbl">Motion</div><div class="val" id="v-motion"></div></div>
       <div class="mk"><div class="knob" id="k-mix" tabindex="0"></div><div class="lbl">Mix</div><div class="val" id="v-mix"></div></div>
     </div>
-    <div class="flavor br" role="group" aria-label="Flavour" data-fx="mosaic"><canvas class="fx" aria-hidden="true"></canvas><span class="lbl-tab">Flavour</span>
+  </section>
+  <div class="flavor br" role="group" aria-label="Flavour" data-fx="mosaic"><canvas class="fx" aria-hidden="true"></canvas><span class="lbl-tab">Flavour</span>
       <button aria-pressed="true" data-flv="FUSE">Fuse<small>merge tracks</small></button>
       <button aria-pressed="false" data-flv="ERASE">Erase<small>cancel overlaps</small></button>
       <button aria-pressed="false" data-flv="GHOST">Ghost<small>smeared echoes</small></button>
@@ -225,7 +227,6 @@ input.ed-in:focus-visible,input.ed-in:focus{outline:0}
       <button aria-pressed="false" data-flv="CURVE">Curve<small>bend the phase</small></button>
       <button aria-pressed="false" data-flv="DISPERSE">Disperse<small>spread in time</small></button>
     </div>
-  </section>
 
 <section class="pro br" aria-label="Pro settings" id="propage" data-fx="grid"><canvas class="fx" aria-hidden="true"></canvas><span class="lbl-tab">Pro settings</span>
     <nav class="rail" aria-label="Pro sections" id="rail"></nav>
@@ -1356,7 +1357,7 @@ function buildMask(fx){const {W,H,cv,host}=fx,m=document.createElement('canvas')
   const cr=cv.getBoundingClientRect(),shapes=[],grid=fx.kind==='grid';
   host.querySelectorAll(grid?'.knob,.mk .lbl,.mk .val,.hero .read,.rail button,.panel h2,.panel .lead,.panel .field,.panel table.groups':'button').forEach(el=>{const r=el.getBoundingClientRect();if(!r.width)return;
     if(el.classList.contains('knob'))shapes.push({c:1,x:r.left-cr.left+r.width/2,y:r.top-cr.top+r.height/2,r:r.width/2});
-    else if(!grid){const w=el.offsetWidth,h=el.offsetHeight,cx=r.left-cr.left+r.width/2,cy=r.top-cr.top+r.height/2;shapes.push({c:2,cx,cy,hw:w/2,hh:h/2});}
+    else if(!grid){const k=cv.offsetWidth?cr.width/cv.offsetWidth:1,w=el.offsetWidth*k,h=el.offsetHeight*k,cx=r.left-cr.left+r.width/2,cy=r.top-cr.top+r.height/2;shapes.push({c:2,cx,cy,hw:w/2,hh:h/2});}
     else shapes.push({c:0,l:r.left-cr.left,t:r.top-cr.top,r:r.right-cr.left,b:r.bottom-cr.top});});
   const BLK=0xff050505,SK=Math.tan(16*Math.PI/180),CS=Math.cos(16*Math.PI/180);
   if(!grid){// flavour: a plain 2 px solid black margin following each slanted tab
@@ -1370,7 +1371,7 @@ function buildMask(fx){const {W,H,cv,host}=fx,m=document.createElement('canvas')
     if(a*16>BAYER[((y>>1)&3)*4+((x>>1)&3)]+0.5){for(let j=0;j<2&&y+j<H;j++)for(let i=0;i<2&&x+i<W;i++)d32[(y+j)*W+x+i]=BLK;}}
   mg.putImageData(img,0,0);return m;}
 function makeFx(host){const cv=host.querySelector('canvas.fx'),g=cv.getContext('2d'),fx={host,cv,g,kind:host.dataset.fx,hover:false,mx:-1e3,my:-1e3,px:0,py:0,t:0,intro:0,introDone:false,pings:[],flips:[],last:0,W:0,H:0,seed:FX.length*17.3};
-  const size=()=>{const r=cv.getBoundingClientRect();fx.W=cv.width=Math.max(2,Math.round(r.width));fx.H=cv.height=Math.max(2,Math.round(r.height));fx.mask=buildMask(fx);drawFx(fx,true);};
+  const size=()=>{const r=cv.getBoundingClientRect();fx.W=cv.width=Math.max(2,Math.round(r.width));fx.H=cv.height=Math.max(2,Math.round(r.height));fx.mask=buildMask(fx);drawFx(fx,true);};fx.size=size;
   new ResizeObserver(size).observe(cv);
   host.addEventListener('pointerenter',()=>{fx.hover=true;if(!fx.introDone){fx.intro=0;}fx.last=performance.now();if(!fx.raf)fx.raf=requestAnimationFrame(ts=>tickFx(fx,ts));});
   host.addEventListener('pointerleave',()=>{fx.hover=false;fx.mx=fx.my=-1e3;});

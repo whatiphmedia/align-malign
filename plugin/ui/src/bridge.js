@@ -5,6 +5,21 @@
   if (!J || !J.backend) return;
   document.documentElement.classList.add('in-plugin');
 
+  // ---- scale to fit: the layout keeps its full design width and the whole interface scales down uniformly
+  const DW = 1376, DH = 1118;   // .plugin (1340 x 1082 px) + margins; the main page is the tallest view
+  const plug = document.querySelector('.plugin');
+  let lastScale = 0;
+  const fit = () => {
+    const s = Math.max(0.3, Math.min(innerWidth / DW, innerHeight / DH));
+    plug.style.transform = `translateX(-50%) scale(${s})`;
+    if (Math.abs(s - lastScale) > 1e-3) {
+      lastScale = s;
+      requestAnimationFrame(() => { resizeView(); FX.forEach(f => f.size && f.size()); });
+    }
+  };
+  addEventListener('resize', fit);
+  fit();
+
   let applying = 0;
   const send = (id, v) => { if (!applying) J.backend.emitEvent('param', { id, v }); };
   const act = (name) => J.backend.emitEvent('action', { name });
