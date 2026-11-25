@@ -45,6 +45,11 @@
   }
   document.querySelectorAll('#scope button').forEach(b => b.addEventListener('click', () => send('scope', b.dataset.v)));
 
+  // Only the plugin window you're using animates. Any interaction here claims it; the plugin tells the others to idle.
+  let lastClaim = 0;
+  const claim = () => { const t = performance.now(); if (t - lastClaim > 250) { lastClaim = t; act('activate'); } };
+  for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel', 'focus']) addEventListener(ev, claim, { passive: true });
+
   // Learn: one button in the status bar drives the whole session
   const learn = document.getElementById('learn');
   learn.addEventListener('click', () => act('learn'));
@@ -58,6 +63,8 @@
   J.backend.addEventListener('state', s => {
     applying++;
     try {
+      const idle = s.active === false;
+      if (idle !== !!S.idle) { S.idle = idle; S.dirty = true; }   // paused windows show a still frame
       const kv = 0.5 + s.alignment / 200;
       if (!fresh('alignment') && Math.abs(main.get() - kv) > 0.0015) main.set(kv);
       for (const id of ['match', 'width', 'motion', 'mix'])

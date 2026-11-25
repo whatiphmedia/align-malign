@@ -2,6 +2,10 @@
 #include "BinaryData.h"
 
 namespace {
+// Only one plugin window animates at a time: the one most recently used (opened, clicked, hovered, typed in).
+std::atomic<int> gActiveEditor{ 0 };
+std::atomic<int> gNextEditorId{ 1 };
+
 std::vector<std::byte> toBytes(const char* data, int size) {
     std::vector<std::byte> v((size_t)size);
     std::memcpy(v.data(), data, (size_t)size);
@@ -9,7 +13,8 @@ std::vector<std::byte> toBytes(const char* data, int size) {
 }
 } // namespace
 
-AlignMalignEditor::AlignMalignEditor(AlignMalignProcessor& p) : juce::AudioProcessorEditor(&p), proc_(p) {
+AlignMalignEditor::AlignMalignEditor(AlignMalignProcessor& p) : juce::AudioProcessorEditor(&p), proc_(p), editorId_(gNextEditorId++) {
+    gActiveEditor = editorId_;   // a window you just opened is the one you're using
     for (int i = 0; i < 2048; ++i)
         window_[(size_t)i] = 0.5f - 0.5f * std::cos(juce::MathConstants<float>::twoPi * (float)i / 2048.f);
 
@@ -28,7 +33,8 @@ AlignMalignEditor::AlignMalignEditor(AlignMalignProcessor& p) : juce::AudioProce
                     })
                     .withEventListener("action", [this](juce::var v) {
                         const auto name = v.getDynamicObject() ? v.getDynamicObject()->getProperty("name").toString() : v.toString();
-                        if (name == "learn") proc_.toggleLearn();
+                        if (name == "activate") gActiveEditor = editorId_;
+                        else if (name == "learn") proc_.toggleLearn();
                         else if (name == "solve") am::SessionBus::get().requestSolve();
                     });
 
@@ -44,7 +50,11 @@ AlignMalignEditor::AlignMalignEditor(AlignMalignProcessor& p) : juce::AudioProce
     startTimerHz(30);
 }
 
-AlignMalignEditor::~AlignMalignEditor() { stopTimer(); }
+AlignMalignEditor::~AlignMalignEditor() {
+    stopTimer();
+    int me = editorId_;
+    gActiveEditor.compare_exchange_strong(me, 0);
+}
 
 void AlignMalignEditor::resized() {
     // Always landscape, always the design's proportions: if a host hands us a different shape (e.g. a tall window),
@@ -95,7 +105,12 @@ juce::Array<juce::var> AlignMalignEditor::spectrumBands() {
 
 void AlignMalignEditor::timerCallback() {
     if (!web_ || !isShowing()) return;
+    const bool active = gActiveEditor.load() == editorId_;
+    if (!active && (++idleTick_ % 15) != 0) return;   // idle windows only refresh their values twice a second
     auto state = proc_.makeUIState();
-    if (auto* o = state.getDynamicObject()) o->setProperty("bands", spectrumBands());
+    if (auto* o = state.getDynamicObject()) {
+        o->setProperty("active", active);
+        if (active) o->setProperty("bands", spectrumBands());
+    }
     web_->emitEventIfBrowserIsVisible("state", state);
 }

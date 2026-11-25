@@ -21,6 +21,8 @@ private:
     static constexpr int designW = 1376, designH = 1118;   // the interface's design size (landscape)
     bool fixingAspect_ = false;
     AlignMalignProcessor& proc_;
+    const int editorId_;
+    int idleTick_ = 0;
     std::unique_ptr<juce::WebBrowserComponent> web_;
     juce::dsp::FFT fft_{ 11 };                         // 2048 points
     std::vector<float> fftBuf_ = std::vector<float>(4096, 0.f);
