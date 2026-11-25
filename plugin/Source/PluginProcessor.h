@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "am/session.h"
+#include "am/convolver.h"
 #include <array>
 #include <map>
 
@@ -10,8 +11,8 @@
 //   L/R -> Mid/Side -> [learn: Mid to the session bus] -> FIR (Mid) + FIR (Side)  (+ mirrored FIRs for Motion)
 //       -> Ghost / Width / Delta / A-B / Mix -> L/R
 //
-// The FIRs are linear-phase and centred, so every instance reports the same latency (kIRLen/2) and the host's
-// delay compensation keeps tracks aligned with each other.
+// The FIRs are linear-phase and centred, so every instance reports the same latency (kIRLen/2 + the convolver's
+// 512-sample block) and the host's delay compensation keeps tracks aligned with each other.
 class AlignMalignProcessor : public juce::AudioProcessor, private juce::Timer {
 public:
     AlignMalignProcessor();
@@ -60,8 +61,9 @@ private:
     std::shared_ptr<am::Slot> slot_;
     juce::String trackName_ = "Track", scope_ = "session";
 
-    juce::dsp::Convolution convMid_, convSide_, convMidM_, convSideM_;
-    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::None> dryDelay_{ am::kIRLen };
+    std::unique_ptr<am::PartitionedConvolver> convMid_, convSide_, convMidM_, convSideM_;
+    static int latency() { return am::kIRLen / 2 + am::PartitionedConvolver::P; }  // FIR centre + convolver block
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::None> dryDelay_{ am::kIRLen * 2 };
     juce::AudioBuffer<float> mid_, side_, midM_, sideM_, dryM_, dryS_;
     std::vector<float> monoScratch_;
     double sampleRate_ = 48000.0;

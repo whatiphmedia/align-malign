@@ -31,10 +31,12 @@ jobs:
         run: cmake -B build -S . -A x64 -DALIGNMALIGN_BUILD_TESTS=ON
 
       - name: Build
-        run: cmake --build build --config Release --parallel --target am_engine_test AlignMalign_VST3 AlignMalign_Standalone
+        run: cmake --build build --config Release --parallel --target am_engine_test am_convolver_test AlignMalign_VST3 AlignMalign_Standalone
 
-      - name: Engine test
-        run: build\Release\am_engine_test.exe
+      - name: Engine tests
+        run: |
+          build\Release\am_engine_test.exe
+          build\Release\am_convolver_test.exe
 
       - name: Package
         shell: pwsh

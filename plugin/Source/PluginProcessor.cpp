@@ -87,9 +87,15 @@ AlignMalignProcessor::AlignMalignProcessor()
     pDelta_ = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("delta"));
     jassert(pAlign_ && pMatch_ && pWidth_ && pMotion_ && pMix_ && pFlavour_ && pAB_ && pDelta_);
 
+    for (auto* c : { &convMid_, &convSide_, &convMidM_, &convSideM_ }) {
+        *c = std::make_unique<am::PartitionedConvolver>(am::kIRLen);
+        std::vector<float> delta((size_t)am::kIRLen, 0.f);
+        delta[(size_t)am::kIRLen / 2] = 1.f;                     // neutral until the session sends a map
+        (*c)->setKernel((*c)->makeKernel(delta));
+    }
     slot_ = am::SessionBus::get().join(0.0);
     slot_->onIR = [this](std::shared_ptr<const am::IRSet> s) { loadIRs(std::move(s)); };
-    setLatencySamples(am::kIRLen / 2);
+    setLatencySamples(latency());
     startTimerHz(30);
 }
 
@@ -108,47 +114,30 @@ void AlignMalignProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     prepared_ = false;
     sampleRate_ = sampleRate;
     const int maxBlock = juce::jmax(16, samplesPerBlock);
-    const juce::dsp::ProcessSpec mono{ sampleRate, (juce::uint32)maxBlock, 1 };
-    for (auto* c : { &convMid_, &convSide_, &convMidM_, &convSideM_ }) {
-        c->prepare(mono);
-        c->reset();
-    }
-    // neutral impulse (a centred delta) until the session hands us a real one: keeps latency constant
-    juce::AudioBuffer<float> delta(1, am::kIRLen);
-    delta.clear();
-    delta.setSample(0, am::kIRLen / 2, 1.f);
-    for (auto* c : { &convMid_, &convSide_, &convMidM_, &convSideM_ }) {
-        juce::AudioBuffer<float> copy(delta);
-        c->loadImpulseResponse(std::move(copy), sampleRate, juce::dsp::Convolution::Stereo::no,
-                               juce::dsp::Convolution::Trim::no, juce::dsp::Convolution::Normalise::no);
-    }
+    // Convolvers keep their kernels across prepare; only their input history is cleared.
+    for (auto* c : { convMid_.get(), convSide_.get(), convMidM_.get(), convSideM_.get() }) c->reset();
     dryDelay_.prepare({ sampleRate, (juce::uint32)maxBlock, 2 });
-    dryDelay_.setMaximumDelayInSamples(am::kIRLen);
-    dryDelay_.setDelay((float)(am::kIRLen / 2));
+    dryDelay_.setMaximumDelayInSamples(am::kIRLen * 2);
+    dryDelay_.setDelay((float)latency());
     dryDelay_.reset();
     for (auto* b : { &mid_, &side_, &midM_, &sideM_, &dryM_, &dryS_ }) b->setSize(1, maxBlock, false, true, false);
     monoScratch_.assign((size_t)maxBlock, 0.f);
-    setLatencySamples(am::kIRLen / 2);
+    setLatencySamples(latency());
     am::SessionBus::get().setSampleRate(sampleRate);
-    am::SessionBus::get().controlsChanged(); // rebuild IRs for this sample rate
+    am::SessionBus::get().controlsChanged(); // rebuild IRs for this sample rate (sent only if they changed)
     prepared_ = true;
 }
 
 void AlignMalignProcessor::loadIRs(std::shared_ptr<const am::IRSet> set) {
-    // Called on the session worker thread. Convolution::loadImpulseResponse is safe to call from any thread;
-    // the swap happens on JUCE's background thread with a short crossfade.
-    auto load = [this](juce::dsp::Convolution& c, const std::vector<float>& h) {
-        if (h.empty()) return;
-        juce::AudioBuffer<float> b(1, (int)h.size());
-        b.copyFrom(0, 0, h.data(), (int)h.size());
-        c.loadImpulseResponse(std::move(b), sampleRate_, juce::dsp::Convolution::Stereo::no,
-                              juce::dsp::Convolution::Trim::no, juce::dsp::Convolution::Normalise::no);
+    // Called on the session worker thread. The kernel is transformed here; the audio thread picks it up at its next
+    // block and crossfades into it with full input history (no dropout).
+    auto load = [](am::PartitionedConvolver& c, const std::vector<float>& h) {
+        if (!h.empty()) c.setKernel(c.makeKernel(h));
     };
-    if (!prepared_.load()) return; // prepareToPlay asks the bus for a fresh set anyway
-    load(convMid_, set->mid);
-    load(convSide_, set->side);
-    load(convMidM_, set->midMirror);
-    load(convSideM_, set->sideMirror);
+    load(*convMid_, set->mid);
+    load(*convSide_, set->side);
+    load(*convMidM_, set->midMirror.empty() ? set->mid : set->midMirror);
+    load(*convSideM_, set->sideMirror.empty() ? set->side : set->sideMirror);
 }
 
 void AlignMalignProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) {
@@ -201,21 +190,15 @@ void AlignMalignProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
             dryDelay_.pushSample(1, s[i]); ds[i] = dryDelay_.popSample(1);
         }
 
+        // The mirror convolvers always run so their history is warm when Motion is turned up.
         const bool useMotion = motion > 0.001f;
+        midM_.copyFrom(0, 0, mid_, 0, 0, n);
+        sideM_.copyFrom(0, 0, side_, 0, 0, n);
+        convMid_->process(m, n);
+        convSide_->process(s, n);
+        convMidM_->process(midM_.getWritePointer(0), n);
+        convSideM_->process(sideM_.getWritePointer(0), n);
         if (useMotion) {
-            midM_.copyFrom(0, 0, mid_, 0, 0, n);
-            sideM_.copyFrom(0, 0, side_, 0, 0, n);
-        }
-        auto run = [n](juce::dsp::Convolution& c, juce::AudioBuffer<float>& b) {
-            juce::dsp::AudioBlock<float> blk(b);
-            auto sub = blk.getSubBlock(0, (size_t)n);
-            c.process(juce::dsp::ProcessContextReplacing<float>(sub));
-        };
-        run(convMid_, mid_);
-        run(convSide_, side_);
-        if (useMotion) {
-            run(convMidM_, midM_);
-            run(convSideM_, sideM_);
             // Motion: breathe between this setting and its mirror (align <-> malign) every 2 bars
             const double ppqEnd = ppq + n * ppqPerSample;
             const float* mm = midM_.getReadPointer(0);

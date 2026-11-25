@@ -81,6 +81,7 @@ public:
     Maps ownMaps;            // this track's solved maps (index 0 of a 1-track Maps), persisted in plugin state
     std::vector<float> matchDb;
     std::function<void(std::shared_ptr<const IRSet>)> onIR; // set by the plugin; called on the worker thread
+    uint64_t lastIRHash = 0;  // only send impulse responses that actually changed
 
 private:
     friend class SessionBus;
@@ -111,6 +112,7 @@ public:
         std::lock_guard<std::mutex> g(m_);
         if (!worker_.joinable()) { quit_ = false; worker_ = std::thread([this] { run(); }); }
         auto s = std::make_shared<Slot>(nextId_++);
+        s->lastIRHash = 0;
         slots_.push_back(s);
         if (sampleRate > 0) sr_ = sampleRate;
         restartAccumulationLocked();
@@ -161,8 +163,8 @@ public:
         SessionStatus st;
         st.linked = (int)slots_.size();
         st.learning = learning_.load();
-        st.frames = cs_.frames;
-        st.seconds = cs_.frames * (double)kHop / sr_;
+        st.frames = framesA_.load();
+        st.seconds = st.frames * (double)kHop / sr_;
         st.solved = solvedOnce_;
         st.anchor = anchor_;
         return st;
@@ -205,71 +207,101 @@ public:
 private:
     SessionBus() : fft_(kSolveN), win_(hann(kSolveN)) {}
 
+    // Called with m_ held (message thread). The worker owns the cross-spectra and resets them when it sees a new generation.
     void restartAccumulationLocked() {
         order_ = slots_;
-        cs_.reset((int)order_.size(), sr_);
-        frameDone_.assign(kChunks, -1);
+        ++accGen_;
+        framesA_ = 0;
     }
 
+    // Worker loop. The heavy work (analysing frames, solving) runs WITHOUT the bus lock, so the host's message thread
+    // (knob moves, status polling, instances joining) is never blocked behind it. That lock was the source of the knob
+    // lag while learning.
     void run() {
         std::vector<float> frame(kSolveN);
         std::vector<cplx> scratch;
         std::vector<std::vector<cplx>> bins;
         auto lastSolve = std::chrono::steady_clock::now();
+        uint64_t seenGen = ~uint64_t(0);
         std::unique_lock<std::mutex> lk(m_);
         while (!quit_) {
             cv_.wait_for(lk, std::chrono::milliseconds(40));
             if (quit_) break;
+            if (seenGen != accGen_) {                       // accumulation restarted (tracks joined/left, learn started)
+                seenGen = accGen_;
+                cs_.reset((int)order_.size(), sr_);
+                frameDone_.assign(kChunks, -1);
+            }
+            const bool learn = learning_ && order_.size() >= 2;
+            const auto order = order_;
+            bool solveNow = false;
+            lk.unlock();
 
-            // 1) accumulate any timeline frames every linked track has written
-            if (learning_ && order_.size() >= 2) {
+            // 1) accumulate any timeline frames every linked track has written (no lock held)
+            if (learn) {
                 int64_t newest = -1;
-                for (auto& s : order_) newest = std::max(newest, s->latest());
+                for (auto& sl : order) newest = std::max(newest, sl->latest());
                 const int K = cs_.K;
-                bins.resize(order_.size());
+                bins.resize(order.size());
                 for (int64_t c = std::max<int64_t>(3, newest - (kChunks - 16)); c <= newest; ++c) {
                     if (frameDone_[(size_t)(c % kChunks)] == c) continue;
                     bool ok = true;
-                    for (auto& s : order_)
-                        for (int64_t q = c - 3; q <= c && ok; ++q) ok = s->hasChunk(q);
+                    for (auto& sl : order)
+                        for (int64_t q = c - 3; q <= c && ok; ++q) ok = sl->hasChunk(q);
                     if (!ok) continue;
                     std::vector<const cplx*> ptrs;
-                    for (size_t t = 0; t < order_.size(); ++t) {
-                        order_[t]->readFrame(c, frame.data());
+                    for (size_t t = 0; t < order.size(); ++t) {
+                        order[t]->readFrame(c, frame.data());
                         bins[t].resize(K);
                         analyseFrame(fft_, win_, frame.data(), scratch, bins[t].data(), K);
                         ptrs.push_back(bins[t].data());
                     }
                     bool stillValid = true; // the audio thread may have lapped the ring while we read
-                    for (auto& s : order_) stillValid = stillValid && s->hasChunk(c - 3);
+                    for (auto& sl : order) stillValid = stillValid && sl->hasChunk(c - 3);
                     if (stillValid) cs_.addFrame(ptrs);
                     frameDone_[(size_t)(c % kChunks)] = c;
                 }
+                framesA_ = cs_.frames;
                 const auto now = std::chrono::steady_clock::now();
-                if (cs_.frames > 8 && now - lastSolve > std::chrono::milliseconds(1500)) { solveRequested_ = true; lastSolve = now; }
+                if (cs_.frames > 8 && now - lastSolve > std::chrono::milliseconds(1500)) { solveNow = true; lastSolve = now; }
             }
 
-            // 2) solve when asked (and periodically while learning, for live feedback)
-            if (solveRequested_) {
-                solveRequested_ = false;
-                if (cs_.frames > 0 && cs_.T >= 2) { solveLocked(); dirty_ = true; }
+            lk.lock();
+            if (seenGen != accGen_) continue;                 // restarted while we worked: start over
+            if (solveRequested_) { solveRequested_ = false; solveNow = true; }
+
+            // 2) solve (no lock held), then hand the maps to the slots
+            if (solveNow && cs_.frames > 0 && cs_.T >= 2) {
+                lk.unlock();
+                SolveResult r = computeSolve();
+                lk.lock();
+                if (seenGen == accGen_) { applySolveLocked(r); dirty_ = true; }
             }
 
-            // 3) rebuild impulse responses when maps or controls changed
+            // 3) rebuild impulse responses when maps or controls changed (fast; only changed ones are sent)
             if (dirty_) { dirty_ = false; rebuildLocked(); }
         }
     }
 
-    void solveLocked() {
-        anchor_ = autoAnchor(cs_);
-        auto aS = solve(cs_, anchor_, alignStandard());
-        auto mS = solve(cs_, anchor_, malignStandard());
-        auto aE = solve(cs_, anchor_, alignExtended());
-        auto mE = solve(cs_, anchor_, malignExtended());
-        for (size_t t = 0; t < order_.size(); ++t) {
+    struct SolveResult { int anchor = 0; std::vector<std::vector<float>> aS, mS, aE, mE; double binHz = 0; int K = 0; };
+
+    SolveResult computeSolve() const {
+        SolveResult r;
+        r.anchor = autoAnchor(cs_);
+        r.aS = solve(cs_, r.anchor, alignStandard());
+        r.mS = solve(cs_, r.anchor, malignStandard());
+        r.aE = solve(cs_, r.anchor, alignExtended());
+        r.mE = solve(cs_, r.anchor, malignExtended());
+        r.binHz = cs_.binHz; r.K = cs_.K;
+        return r;
+    }
+
+    void applySolveLocked(const SolveResult& r) {
+        anchor_ = r.anchor;
+        for (size_t t = 0; t < order_.size() && t < r.aS.size(); ++t) {
             Maps m;
-            m.binHz = cs_.binHz; m.K = cs_.K;
-            m.alignStd = {aS[t]}; m.malignStd = {mS[t]}; m.alignExt = {aE[t]}; m.malignExt = {mE[t]};
+            m.binHz = r.binHz; m.K = r.K;
+            m.alignStd = {r.aS[t]}; m.malignStd = {r.mS[t]}; m.alignExt = {r.aE[t]}; m.malignExt = {r.mE[t]};
             order_[t]->ownMaps = std::move(m);
         }
         solvedOnce_ = true;
@@ -311,9 +343,24 @@ private:
                 set->midMirror = buildIR(mc.mid, g, binHz, sr_, amt);
                 set->sideMirror = buildIR(mc.side, g, binHz, sr_, amt);
             }
+            if (!s->onIR) continue;               // not connected yet: send once it is
+            const uint64_t hsh = hashIR(*set) ^ (uint64_t)(sr_ * 1000.0);
+            if (hsh == s->lastIRHash) continue;   // identical to what this instance already runs: don't resend
+            s->lastIRHash = hsh;
             set->version = ++irVersion_;
             if (s->onIR) s->onIR(set);
         }
+    }
+
+    static uint64_t hashIR(const IRSet& s) {
+        uint64_t h = 1469598103934665603ull;
+        auto mix = [&h](const std::vector<float>& v) {
+            const unsigned char* p = reinterpret_cast<const unsigned char*>(v.data());
+            for (size_t i = 0; i < v.size() * sizeof(float); ++i) { h ^= p[i]; h *= 1099511628211ull; }
+            h ^= v.size(); h *= 1099511628211ull;
+        };
+        mix(s.mid); mix(s.side); mix(s.midMirror); mix(s.sideMirror);
+        return h;
     }
 
     mutable std::mutex m_;
@@ -328,7 +375,8 @@ private:
     std::vector<double> win_;
     double sr_ = 48000;
     int nextId_ = 0, anchor_ = -1;
-    uint64_t irVersion_ = 0;
+    uint64_t irVersion_ = 0, accGen_ = 0;
+    std::atomic<int64_t> framesA_{0};
 };
 
 } // namespace am

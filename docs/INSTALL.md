@@ -24,10 +24,13 @@
    (ARA2 mode for Studio One, which skips the Learn pass, is the next milestone.)
 
 ## Good to know
+- **Put Auto Malign first** on each track, or at least before any plugin that adds latency (look-ahead limiters,
+  linear-phase EQs). The plugin can't see the latency of plugins in front of it, so a delayed input would be
+  learned as if the track were late.
 - **Renamed:** the plugin is now **Auto Malign**. If you installed an earlier build, delete the old
   `Align Malign.vst3` folder from `C:\Program Files\Common Files\VST3\` before copying the new one.
 - **Ctrl+click** any knob or slider to reset it to its default (the main knob goes back to 0).
-- **Latency:** each copy reports 4096 samples (~85 ms at 48 kHz). Both hosts compensate automatically, so
+- **Latency:** each copy reports 4608 samples (~96 ms at 48 kHz). Both hosts compensate automatically, so
   tracks stay in time with each other. Put it on all tracks you care about so they share the same delay.
 - **Match** (on by default) removes the level and tone change alignment causes, so you hear only the phase
   difference. **A/B** plays the original; **Delta** plays only what changed.

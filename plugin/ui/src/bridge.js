@@ -28,7 +28,11 @@
   if (!J || !J.backend) { if (tries < 100) setTimeout(() => connect(tries + 1), 50); return; }
 
   let applying = 0;
-  const send = (id, v) => { if (!applying) J.backend.emitEvent('param', { id, v }); };
+  // Controls the user is touching ignore the plugin's echo for a moment, so a slightly stale value coming back
+  // from the plugin never drags a knob backwards mid-turn (that tug felt like lag).
+  const touched = {};
+  const fresh = id => performance.now() - (touched[id] || 0) < 450;
+  const send = (id, v) => { if (!applying) { touched[id] = performance.now(); J.backend.emitEvent('param', { id, v }); } };
   const act = (name) => J.backend.emitEvent('action', { name });
 
   // ---- UI -> plugin
@@ -55,10 +59,10 @@
     applying++;
     try {
       const kv = 0.5 + s.alignment / 200;
-      if (Math.abs(main.get() - kv) > 0.0015) main.set(kv);
+      if (!fresh('alignment') && Math.abs(main.get() - kv) > 0.0015) main.set(kv);
       for (const id of ['match', 'width', 'motion', 'mix'])
-        if (Math.abs(MAC[id].get() - s[id]) > 0.0015) MAC[id].set(s[id]);
-      if (P.flavor !== s.flavour) {
+        if (!fresh(id) && Math.abs(MAC[id].get() - s[id]) > 0.0015) MAC[id].set(s[id]);
+      if (!fresh('flavour') && P.flavor !== s.flavour) {
         const b = document.querySelector(`.flavor button[data-flv="${s.flavour}"]`);
         if (b) b.click();
       }

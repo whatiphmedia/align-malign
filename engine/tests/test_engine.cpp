@@ -78,9 +78,9 @@ int main() {
 
     auto render = [&](float knob, int flavour, float match) {
         for (auto& s : slots) { s->controls.knob = knob; s->controls.flavour = flavour; s->controls.match = match; s->controls.motionOn = false; }
-        { std::lock_guard<std::mutex> l(irm); latestIR.clear(); }
+        // the bus only resends impulse responses that changed, so keep each track's latest one
         bus.controlsChanged();
-        for (int w = 0; w < 200; ++w) { std::this_thread::sleep_for(std::chrono::milliseconds(10)); std::lock_guard<std::mutex> l(irm); if (latestIR.size() == 3) break; }
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
         std::vector<float> sum(N, 0.f);
         for (int t = 0; t < 3; ++t) {
             std::shared_ptr<const IRSet> ir; { std::lock_guard<std::mutex> l(irm); ir = latestIR[t]; }
