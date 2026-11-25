@@ -80,12 +80,11 @@ header{grid-area:head;display:flex;align-items:center;gap:14px;flex-wrap:wrap;pa
 .flavor{grid-area:flav;display:grid;grid-template-columns:1fr;grid-auto-rows:auto;gap:10px;padding:34px 0 22px 22px;align-content:space-between}
 .is-pro .flavor{display:none}
 .flavor button{transform:none;border:0;border-radius:0;height:66px;padding:0 0 0 16px;text-align:left;display:flex;flex-direction:column;justify-content:center;
-  clip-path:polygon(0 0,100% 0,calc(100% - 20px) 100%,0 100%);
-  -webkit-mask-image:linear-gradient(90deg,#000 64%,transparent 100%);mask-image:linear-gradient(90deg,#000 64%,transparent 100%);
+  -webkit-mask-image:linear-gradient(90deg,#000 60%,transparent 100%);mask-image:linear-gradient(90deg,#000 60%,transparent 100%);
   box-shadow:inset 3px 0 0 var(--line),inset 0 1.5px 0 var(--line),inset 0 -1.5px 0 var(--line)}
 .flavor button>.sk{transform:none;font:800 var(--flv-fs,24px)/.9 var(--ui);font-stretch:125%;letter-spacing:-.025em;text-transform:uppercase;white-space:nowrap}
 .flavor button[aria-pressed="true"]{color:#050505;box-shadow:inset 7px 0 0 #39e6b0,inset 0 1.5px 0 var(--line),inset 0 -1.5px 0 var(--line)}
-.flavor button:hover:not([aria-pressed="true"]){background:rgba(5,5,5,.35)}
+.flavor button:hover:not([aria-pressed="true"]){background:rgba(28,28,28,.85)}
 .flavor button>.sk{display:block}
 .flavor button small{display:block;font:500 9.5px/1.2 var(--mono);font-stretch:100%;letter-spacing:.08em;text-transform:uppercase;color:#d2d2d2;margin-top:7px;white-space:nowrap}
 .flavor button[aria-pressed="true"] small{color:#3a3a3a}
@@ -168,7 +167,7 @@ input.gname::selection{background:rgba(57,230,176,.28)}
 /* keep-out margins: the background never touches a control */
 .mk .lbl,.mk .val{padding:3px 8px}
 .hero .read{padding:10px 12px}
-.flavor button{background-color:rgba(5,5,5,.6)}
+.flavor button{background-color:rgba(5,5,5,.85)}
 .flavor button[aria-pressed="true"]{background-color:var(--line)}
 /* editable values */
 .ed{cursor:text}
@@ -1375,7 +1374,7 @@ function buildMask(fx){const {W,H,cv,host}=fx,m=document.createElement('canvas')
     else shapes.push({c:0,l:r.left-cr.left,t:r.top-cr.top,r:r.right-cr.left,b:r.bottom-cr.top});});
   const BLK=0xff050505,SK=Math.tan(16*Math.PI/180),CS=Math.cos(16*Math.PI/180);
   if(!grid){// flavour: a plain 2 px solid black margin on each tab's flat left, top and bottom edges
-    for(const s of shapes){const fadeX=s.l+(s.r-s.l)*0.64;
+    for(const s of shapes){const fadeX=s.l+(s.r-s.l)*0.6;
       for(let y=Math.max(0,Math.floor(s.t-2));y<Math.min(H,Math.ceil(s.b+2));y++)for(let x=Math.max(0,Math.floor(s.l-2));x<Math.min(W,Math.ceil(fadeX));x++){
         const inside=x>=s.l&&y>=s.t&&y<s.b;if(!inside)d32[y*W+x]=BLK;}}
     mg.putImageData(img,0,0);return m;}
@@ -1390,10 +1389,7 @@ function makeFx(host){const cv=host.querySelector('canvas.fx'),g=cv.getContext('
   new ResizeObserver(size).observe(cv);
   host.addEventListener('pointerenter',()=>{fx.hover=true;if(!fx.introDone){fx.intro=0;}fx.last=performance.now();if(!fx.raf)fx.raf=requestAnimationFrame(ts=>tickFx(fx,ts));});
   host.addEventListener('pointerleave',()=>{fx.hover=false;fx.mx=fx.my=-1e3;});
-  host.addEventListener('pointermove',e=>{const r=cv.getBoundingClientRect();fx.mx=e.clientX-r.left;fx.my=e.clientY-r.top;
-    const b=fx.kind==='mosaic'&&e.target.closest?e.target.closest('button'):null;
-    if(b){const q=b.getBoundingClientRect(),k=fx.W/(r.width||1);fx.btn={l:(q.left-r.left)*k,t:(q.top-r.top)*k,r:(q.right-r.left)*k,b:(q.bottom-r.top)*k};}else fx.btn=null;});
-  host.addEventListener('pointerleave',()=>{fx.btn=null;});
+  host.addEventListener('pointermove',e=>{const r=cv.getBoundingClientRect();fx.mx=e.clientX-r.left;fx.my=e.clientY-r.top;});
   host.addEventListener('pointerdown',e=>{const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;if(fx.kind==='grid')fx.pings.push({x,y,t:fx.t});else fx.flips.push({x,y,t:fx.t});});
   FX.push(fx);size();return fx;}
 function tickFx(fx,ts){fx.raf=0;if(S.focus||(!fx.hover&&Math.abs(fx.px)+Math.abs(fx.py)+(fx.hv||0)<0.01&&fx.kind==='grid')||(!fx.hover&&fx.kind!=='grid')){fx.px=fx.py=0;drawFx(fx,true);return;}
@@ -1488,11 +1484,7 @@ function drawMosaic(fx,rest){const {g,W,H}=fx;g.setTransform(1,0,0,1,0,0);g.fill
     let c3=[0,1,2].map(i=>HM.base[i]+(tgt[i]-HM.base[i])*mix);
     const lum=0.2126*c3[0]+0.7152*c3[1]+0.0722*c3[2];
     c3=c3.map(v=>Math.max(0,Math.min(255,(lum+(v-lum)*HM.boostSat)*HM.boostLum)));
-    // warp: inside the hovered tab the grid bulges away from the mouse like a lens
-    let wx=0,wy=0,ws=1;
-    if(!rest&&fx.btn&&cx>fx.btn.l&&cx<fx.btn.r&&cy>fx.btn.t&&cy<fx.btn.b){const dx=cx-fx.mx,dy=cy-fx.my,d=Math.hypot(dx,dy),R=(fx.btn.b-fx.btn.t)*1.1;
-      if(d<R&&d>0.01){const k=(1-d/R)**2;wx=dx/d*k*T*0.9;wy=dy/d*k*T*0.9;ws=1+k*0.7;c3=c3.map(v=>Math.min(255,v*(1+k*0.5)));}}
-    const w=Math.max(1,(T-gap)*sx*ws),hgt=(T-gap)*ws,x0=cx+wx-w/2,y0=cy+wy-hgt/2;
+    const w=Math.max(1,(T-gap)*sx),hgt=T-gap,x0=cx-w/2,y0=cy-hgt/2;
     g.globalAlpha=1;g.fillStyle=`rgb(${c3[0]|0},${c3[1]|0},${c3[2]|0})`;g.fillRect(x0,y0,w,hgt);
     // bevel
     g.globalAlpha=HM.bevel*edge*(rest?0.5:1);g.fillStyle=rgba(HM.metal,0.55);g.fillRect(x0,y0,w,1);g.fillRect(x0,y0,1,hgt);g.fillStyle='rgba(0,0,0,.6)';g.fillRect(x0,y0+hgt-1,w,1);g.fillRect(x0+w-1,y0,1,hgt);
