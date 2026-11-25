@@ -1,4 +1,4 @@
-// Align/Malign session bus: links every plugin instance in the host process.
+// Auto Malign session bus: links every plugin instance in the host process.
 //
 // Each instance (one per track) owns a Slot. While "Learn" is on and the transport plays, the audio thread
 // writes its mono mid signal into a lock-free ring indexed by *host timeline sample*, so every track's audio

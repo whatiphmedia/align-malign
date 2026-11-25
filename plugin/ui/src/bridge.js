@@ -1,4 +1,4 @@
-/* Align/Malign plugin bridge: connects the HTML interface to the plugin when it runs inside the
+/* Auto Malign plugin bridge: connects the HTML interface to the plugin when it runs inside the
    plugin window (JUCE WebBrowserComponent with native integration). In a normal browser this does nothing. */
 // ---- scale to fit (always on in the plugin build): the layout keeps its full design width and the whole interface
 // scales uniformly to the window. No scrolling, ever.

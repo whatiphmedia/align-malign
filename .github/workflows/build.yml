@@ -24,6 +24,9 @@ jobs:
           Register-PackageSource -ProviderName NuGet -Name nugetRepository -Location https://www.nuget.org/api/v2 -Force -ErrorAction SilentlyContinue | Out-Null
           Install-Package Microsoft.Web.WebView2 -Scope CurrentUser -RequiredVersion 1.0.1901.177 -Source nugetRepository -Force -ErrorAction SilentlyContinue | Out-Null
 
+      - name: Build the interface page
+        run: python tools/build_ui.py
+
       - name: Configure
         run: cmake -B build -S . -A x64 -DALIGNMALIGN_BUILD_TESTS=ON
 
@@ -53,6 +56,16 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: AutoMalign-Windows-x64.zip
+
+      - name: Remove superseded files from the Latest build
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for a in $(gh release view latest --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' 2>/dev/null); do
+            if [ "$a" != "AutoMalign-Windows-x64.zip" ]; then gh release delete-asset latest "$a" --repo "$GITHUB_REPOSITORY" -y; fi
+          done
 
       - name: Latest build (every push to main)
         if: github.ref == 'refs/heads/main'

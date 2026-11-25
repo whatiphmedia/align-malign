@@ -11,7 +11,7 @@ A free alternative to Sound Radix Auto-Align Post, built for creative use.
 |---|---|
 | `engine/` | Framework-free C++ engine: session bus, static phase solver, Match EQ, FIR builder, tests |
 | `plugin/Source/` | JUCE 8 plugin (processor, WebView2 editor) |
-| `plugin/ui/` | The interface. `src/prototype.html` is the design prototype, `src/bridge.js` connects it to the plugin; `tools/build_ui.py` builds `index.html`, which is embedded in the plugin |
+| `plugin/ui/src/` | The interface: `interface.html` (the full UI, also runs in a browser) and `bridge.js` (connects it to the plugin). `tools/build_ui.py` combines them into `plugin/ui/index.html`, which is embedded in the plugin; that file is generated, not committed |
 | `.github/workflows/build.yml` | Windows build: engine test, VST3 + standalone, zip, release |
 
 ## Build locally (Windows)

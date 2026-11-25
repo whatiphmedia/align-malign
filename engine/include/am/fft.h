@@ -1,4 +1,4 @@
-// Align/Malign engine: small iterative radix-2 complex FFT (no dependencies).
+// Auto Malign engine: small iterative radix-2 complex FFT (no dependencies).
 // Used on worker threads only (analysis and impulse-response builds), never on the audio thread.
 #pragma once
 #include <cmath>

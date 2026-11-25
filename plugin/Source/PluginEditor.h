@@ -2,7 +2,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
-// The plugin window is the Align/Malign HTML interface running in the system web view (WebView2 on Windows),
+// The plugin window is the Auto Malign HTML interface running in the system web view (WebView2 on Windows),
 // served from binary data inside the plugin. A small event bridge connects it to the processor:
 //   UI -> plugin : "param" {id, v}, "action" {name}
 //   plugin -> UI : "state" {params, session status, meters, 9 spectrum bands} at 30 fps

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Builds plugin/ui/index.html (embedded in the plugin) from the UI prototype + the plugin bridge.
+"""Builds plugin/ui/index.html (embedded in the plugin) from the interface (plugin/ui/src/interface.html) + the plugin bridge.
 
     python3 tools/build_ui.py
 
-Changes made for the plugin build (the prototype keeps working in a normal browser):
+Changes made for the plugin build (interface.html keeps working in a normal browser):
   - the scene and meters read the plugin's real output level/spectrum when the bridge feeds them (AU.ext)
   - the demo-only controls (Load audio, Sweep) are hidden; a Learn button is added to the status bar
   - bridge.js is appended at the end of the page
@@ -11,7 +11,7 @@ Changes made for the plugin build (the prototype keeps working in a normal brows
 import pathlib, sys
 
 root = pathlib.Path(__file__).resolve().parents[1]
-src = (root / "plugin/ui/src/prototype.html").read_text(encoding="utf-8")
+src = (root / "plugin/ui/src/interface.html").read_text(encoding="utf-8")
 bridge = (root / "plugin/ui/src/bridge.js").read_text(encoding="utf-8")
 
 

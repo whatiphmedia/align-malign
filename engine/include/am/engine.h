@@ -1,4 +1,4 @@
-// Align/Malign engine core: framework-free, header-only.
+// Auto Malign engine core: framework-free, header-only.
 //
 // Pipeline (static mode, the M0-validated path):
 //   1. CrossSpectra  - every linked track is analysed on the same timeline frames (16384-pt Hann STFT).
