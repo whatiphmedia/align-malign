@@ -1374,9 +1374,12 @@ function buildMask(fx){const {W,H,cv,host}=fx,m=document.createElement('canvas')
     else shapes.push({c:0,l:r.left-cr.left,t:r.top-cr.top,r:r.right-cr.left,b:r.bottom-cr.top});});
   const BLK=0xff050505,SK=Math.tan(16*Math.PI/180),CS=Math.cos(16*Math.PI/180);
   if(!grid){// flavour: a plain 2 px solid black margin on each tab's flat left, top and bottom edges
+    // full length, fading out with the tab from 60% to its right end
     for(const s of shapes){const fadeX=s.l+(s.r-s.l)*0.6;
-      for(let y=Math.max(0,Math.floor(s.t-2));y<Math.min(H,Math.ceil(s.b+2));y++)for(let x=Math.max(0,Math.floor(s.l-2));x<Math.min(W,Math.ceil(fadeX));x++){
-        const inside=x>=s.l&&y>=s.t&&y<s.b;if(!inside)d32[y*W+x]=BLK;}}
+      for(let y=Math.max(0,Math.floor(s.t-2));y<Math.min(H,Math.ceil(s.b+2));y++)for(let x=Math.max(0,Math.floor(s.l-2));x<Math.min(W,Math.ceil(s.r));x++){
+        const inside=x>=s.l&&y>=s.t&&y<s.b;if(inside)continue;
+        const a=x<=fadeX?255:Math.round(255*(1-(x-fadeX)/(s.r-fadeX)));
+        if(a>0)d32[y*W+x]=((a<<24)>>>0)|0x050505;}}
     mg.putImageData(img,0,0);return m;}
   const PAD=host.id==='propage'?1:3,FALL=host.id==='propage'?6:26;
   for(let y=0;y<H;y+=2)for(let x=0;x<W;x+=2){let d=1e9;for(const s of shapes){const dd=s.c?Math.hypot(x+1-s.x,y+1-s.y)-s.r:Math.hypot(Math.max(s.l-x-1,0,x+1-s.r),Math.max(s.t-y-1,0,y+1-s.b));if(dd<d)d=dd;}
