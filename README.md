@@ -1,10 +1,10 @@
-# Align Malign
+# Auto Malign
 
 Align every track in a session to each other (phase, not just time), then malign it creatively.
 A free alternative to Sound Radix Auto-Align Post, built for creative use.
 
 - **Plugin:** VST3 for Windows (Ableton Live 12, Studio One / Fender Studio Pro). ARA2 for Studio One is next.
-- **Download:** Releases → *Latest build* → `AlignMalign-Windows-x64.zip`. Install and use: [docs/INSTALL.md](docs/INSTALL.md).
+- **Download:** Releases → *Latest build* → `AutoMalign-Windows-x64.zip`. Install and use: [docs/INSTALL.md](docs/INSTALL.md).
 
 ## Layout
 | Path | What |

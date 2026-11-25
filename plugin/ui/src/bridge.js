@@ -73,7 +73,7 @@
       if (wasLearning !== null && s.learning !== wasLearning)
         toast('ok', s.learning ? `learning · play the song with all ${s.linked} tracks` : 'learning stopped · solving');
       if (wasSolved === false && s.solved) toast('ok', `alignment map ready · ${s.linked} tracks`);
-      if (s.linked < 2 && s.learning && Math.random() < 0.01) toast('warn', 'put Align Malign on every track you want aligned');
+      if (s.linked < 2 && s.learning && Math.random() < 0.01) toast('warn', 'put Auto Malign on every track you want aligned');
       wasLearning = s.learning; wasSolved = s.solved;
     } finally { applying--; }
   });

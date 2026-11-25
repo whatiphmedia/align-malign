@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Align Malign UI Prototype</title>
+<title>Auto Malign UI Prototype</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -189,7 +189,7 @@ html.in-plugin body{display:block;padding:0;min-height:0}
 <body>
 <div class="plugin" id="plugin">
   <header>
-    <div class="wordmark">ALIGN<i>/</i>MALIGN</div>
+    <div class="wordmark">AUTO<i>/</i>MALIGN</div>
     <div class="seg" role="group" aria-label="Where the plugin is working" id="scope">
       <button aria-pressed="true" data-v="session" title="Align every track in the session against each other">Session</button><button aria-pressed="false" data-v="bus" title="Work on one bus">Bus</button><button aria-pressed="false" data-v="master" title="Work on the summed output">Master</button>
     </div>
@@ -214,7 +214,7 @@ html.in-plugin body{display:block;padding:0;min-height:0}
       <div class="mk"><div class="knob" id="k-match" tabindex="0"></div><div class="lbl">Match</div><div class="val" id="v-match"></div></div>
       <div class="mk"><div class="knob" id="k-width" tabindex="0"></div><div class="lbl">Width</div><div class="val" id="v-width"></div></div>
     </div>
-    <div class="hero br" data-fx="grid"><canvas class="fx" aria-hidden="true"></canvas><span class="lbl-tab">Alignment</span>
+    <div class="hero br" data-fx="grid"><canvas class="fx" aria-hidden="true"></canvas><span class="lbl-tab">Malignment</span>
       <div class="knob" id="k-main" tabindex="0"></div>
       <div class="read">
         <div class="ends"><span>Align</span><span>Malign</span></div>
@@ -243,7 +243,7 @@ html.in-plugin body{display:block;padding:0;min-height:0}
     <nav class="rail" aria-label="Pro sections" id="rail"></nav>
     <div class="panel" id="panel"></div>
   </section>
-  <aside class="side br" aria-label="Main macro while in Pro"><span class="lbl-tab">Alignment</span>
+  <aside class="side br" aria-label="Main macro while in Pro"><span class="lbl-tab">Malignment</span>
     <div class="side-top">
       <div class="knob" id="k-main2" tabindex="0"></div>
       <div class="side-info"><div class="mini" id="readout2">Neutral</div><p class="side-sub" id="hsub2">Neutral · tracks summed as recorded</p></div>
@@ -255,7 +255,7 @@ html.in-plugin body{display:block;padding:0;min-height:0}
     <div class="pyrbox" aria-hidden="true"><canvas id="pyr" width="96" height="72"></canvas><div class="cap"><b>12</b> tracks<br><b>3</b> groups<br>ARA</div></div>
     <div id="log" aria-live="polite"><div>Ready · 12 tracks analysed · alignment map loaded</div></div>
     <div class="meters"><span class="meter">IN&nbsp; <i><b id="m-in"></b></i></span><span class="meter">OUT <i><b id="m-out"></b></i></span></div>
-    <div class="src"><span id="sig" title="What drives the meters and the line grid">Demo signal</span><button id="aud" title="Play an audio file to drive the meters and the rainbow grid">Load audio</button><input type="file" id="audf" accept="audio/*" hidden><button id="learn" class="plugin-only" aria-pressed="false" title="Play the song with Align Malign on every track; press again to solve">Learn</button><button id="sweep" aria-pressed="false" title="Sweep the main knob automatically">Sweep</button><span id="perf" title="Click to switch between 30 and 60 fps">— ms</span></div>
+    <div class="src"><span id="sig" title="What drives the meters and the line grid">Demo signal</span><button id="aud" title="Play an audio file to drive the meters and the rainbow grid">Load audio</button><input type="file" id="audf" accept="audio/*" hidden><button id="learn" class="plugin-only" aria-pressed="false" title="Play the song with Auto Malign on every track; press again to solve">Learn</button><button id="sweep" aria-pressed="false" title="Sweep the main knob automatically">Sweep</button><span id="perf" title="Click to switch between 30 and 60 fps">— ms</span></div>
   </div>
 </div>
 <script>
@@ -1258,22 +1258,22 @@ function Knob(el,{value,bipolar,size,onChange,fmt,hero}){const ns='http://www.w3
     for(const [dx,dy,rt] of [[0,-1,0],[1,0,90],[0,1,180],[-1,0,270]]){const cx=C0+dx*(rI+0),cy=C0+dy*(rI+0);}
     if(bipolar)E('line',{x1:C0,y1:C0-rT-6,x2:C0,y2:C0-rT+10,stroke:GR,'stroke-width':2});}
   const ptr=E('line',{stroke:GR,'stroke-width':hero?6:5,'stroke-linecap':'round'});const dot={setAttribute(){}};
-  el.appendChild(svg);const emb=hero?makeEmblem(el,Math.round(rI*2*1.0)):null;el.setAttribute('role','slider');el.setAttribute('aria-valuemin','0');el.setAttribute('aria-valuemax','100');let v=value;const def=value;const subs=[];
+  el.appendChild(svg);const emb=hero?makeEmblem(el,Math.round(rI*2*0.83)):null;el.setAttribute('role','slider');el.setAttribute('aria-valuemin','0');el.setAttribute('aria-valuemax','100');let v=value;const def=value;const subs=[];
   function set(nv,emit=true){v=clamp(nv);const a=lerp(a0,a1,v),mid=(a0+a1)/2;
     const s0=bipolar?Math.min(a,mid):a0,s1=bipolar?Math.max(a,mid):a;paintArc(val,s0,s1,bipolar);const vc=gradAt(v,true);ptr.setAttribute('stroke',vc);if(emb)emb.setColor(vc);
     const r0=hero?rI-18:rI*0.38,r1=rI-5;ptr.setAttribute('x1',C0+r0*Math.cos(a));ptr.setAttribute('y1',C0+r0*Math.sin(a));ptr.setAttribute('x2',C0+r1*Math.cos(a));ptr.setAttribute('y2',C0+r1*Math.sin(a));
     dot.setAttribute('cx',C0+r1*Math.cos(a));dot.setAttribute('cy',C0+r1*Math.sin(a));
     el.setAttribute('aria-valuenow',Math.round(v*100));if(emit){onChange(v);for(const f of subs)f(v);}el.setAttribute('aria-valuetext',fmt(v));}
-  let drag=null;el.addEventListener('pointerdown',e=>{el.setPointerCapture(e.pointerId);drag={x:e.clientX,y:e.clientY,v};el.focus();stopSweep();});
+  let drag=null;el.addEventListener('pointerdown',e=>{if(e.ctrlKey||e.metaKey){e.preventDefault();stopSweep();set(def);return;}el.setPointerCapture(e.pointerId);drag={x:e.clientX,y:e.clientY,v};el.focus();stopSweep();});
   el.addEventListener('pointermove',e=>{if(!drag)return;set(drag.v+((e.clientX-drag.x)-(e.clientY-drag.y))*(e.shiftKey?0.0012:0.005));});
   const up=()=>{drag=null;};el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);el.addEventListener('dblclick',()=>set(def));
   el.addEventListener('wheel',e=>{e.preventDefault();stopSweep();set(v-Math.sign(e.deltaY)*(e.shiftKey?0.005:0.02));},{passive:false});
   el.addEventListener('keydown',e=>{const st=e.shiftKey?0.05:0.01,mp={ArrowUp:st,ArrowRight:st,ArrowDown:-st,ArrowLeft:-st};if(e.key in mp){e.preventDefault();stopSweep();set(v+mp[e.key]);}else if(e.key==='Home')set(0);else if(e.key==='End')set(1);});
-  set(value);return {set,get:()=>v,sub:f=>subs.push(f)};}
+  set(value);el.title='Drag to change · Ctrl+click to reset';return {set,get:()=>v,sub:f=>subs.push(f),reset:()=>set(def)};}
 const pct=v=>`${Math.round(v*100)}%`;
 const main=Knob(document.getElementById('k-main'),{value:0.5,bipolar:true,size:200,hero:true,onChange:setV,fmt:()=>S.sub||'Neutral'});
 {const m2=Knob(document.getElementById('k-main2'),{value:0.5,bipolar:true,size:206,hero:true,onChange:v=>main.set(v),fmt:()=>S.sub||'Neutral'});main.sub(v=>m2.set(v,false));}
-const MAC={},ML=document.getElementById('macrolist');[['match',1],['width',0.5],['motion',0.35],['mix',1]].forEach(([id,v0])=>{const o=document.getElementById('v-'+id),cell=document.createElement('div');cell.innerHTML=`<div class="mrow"><dt>${id[0].toUpperCase()+id.slice(1)}</dt><dd></dd></div><input type="range" min="0" max="100" step="1" aria-label="${id}">`;ML.appendChild(cell);const dd=cell.querySelector('dd'),sl=cell.querySelector('input');sl.addEventListener('input',()=>MAC[id].set(sl.value/100));MAC[id]=Knob(document.getElementById('k-'+id),{value:v0,size:96,onChange:v=>{o.textContent=pct(v);dd.textContent=pct(v);sl.value=Math.round(v*100);sl.style.setProperty('--fill',`${v*100}%`);P[id]=v;S.dirty=true;if(S.t>0.2)P.flash={k:id,t:S.t,v:pct(v)};},fmt:pct});});
+const MAC={},ML=document.getElementById('macrolist');[['match',1],['width',0.5],['motion',0.35],['mix',1]].forEach(([id,v0])=>{const o=document.getElementById('v-'+id),cell=document.createElement('div');cell.innerHTML=`<div class="mrow"><dt>${id[0].toUpperCase()+id.slice(1)}</dt><dd></dd></div><input type="range" min="0" max="100" step="1" aria-label="${id}">`;ML.appendChild(cell);const dd=cell.querySelector('dd'),sl=cell.querySelector('input');sl.addEventListener('input',()=>MAC[id].set(sl.value/100));sl.title='Ctrl+click to reset';sl.addEventListener('pointerdown',e=>{if(e.ctrlKey||e.metaKey){e.preventDefault();MAC[id].reset();}});MAC[id]=Knob(document.getElementById('k-'+id),{value:v0,size:96,onChange:v=>{o.textContent=pct(v);dd.textContent=pct(v);sl.value=Math.round(v*100);sl.style.setProperty('--fill',`${v*100}%`);P[id]=v;S.dirty=true;if(S.t>0.2)P.flash={k:id,t:S.t,v:pct(v)};},fmt:pct});});
 document.querySelectorAll('.flavor button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.flavor button').forEach(x=>x.setAttribute('aria-pressed','false'));b.setAttribute('aria-pressed','true');P.flavor=b.dataset.flv;S.dirty=true;P.flash={k:P.flavor,t:S.t};}));
 ['ab','delta'].forEach(id=>{const b=document.getElementById(id);b.addEventListener('click',()=>{const on=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',on?'true':'false');P[id]=on;P.flash={k:id,t:S.t,v:on?'ON':'OFF'};});});
 // header segments: scope and stereo processing (prototype: state + log)
@@ -1329,6 +1329,8 @@ const PRO=[
         const inp=box.querySelector('input'),out=box.querySelector('output');Object.assign(inp,{min:f.min,max:f.max,step:f.step,value:f.v});
         const upd=()=>{f.v=+inp.value;out.textContent=f.fmt(f.v);inp.style.setProperty('--fill',`${(f.v-f.min)/(f.max-f.min)*100}%`);};upd();
         editable(out,{get:()=>f.v,fmt:v=>v,parse:t=>{const n=num(t);if(n==null)return null;const sc=/khz/i.test(t)?1000:1;return n*sc;},set:v=>{inp.value=clamp(v,f.min,f.max);upd();if(f.link)MAC[f.link].set(f.v);}});
+        if(f.def===undefined)f.def=f.v;inp.title='Ctrl+click to reset';
+        inp.addEventListener('pointerdown',e=>{if(e.ctrlKey||e.metaKey){e.preventDefault();if(f.link){MAC[f.link].reset();inp.value=MAC[f.link].get();}else inp.value=f.def;upd();}});
         inp.addEventListener('input',()=>{upd();if(f.link)MAC[f.link].set(f.v);});}
       else if(f.t==='select'){box.innerHTML=`<div class="row"><label for="${idf}"></label></div><select id="${idf}"></select>`;box.querySelector('label').textContent=f.name;const sel=box.querySelector('select');
         f.opts.forEach((o,k)=>{const op=document.createElement('option');op.value=k;op.textContent=o;sel.appendChild(op);});sel.value=f.v;sel.addEventListener('change',()=>{f.v=+sel.value;f.on&&f.on(f.v);});}
@@ -1715,7 +1717,7 @@ if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{MONO_=nul
       if (wasLearning !== null && s.learning !== wasLearning)
         toast('ok', s.learning ? `learning · play the song with all ${s.linked} tracks` : 'learning stopped · solving');
       if (wasSolved === false && s.solved) toast('ok', `alignment map ready · ${s.linked} tracks`);
-      if (s.linked < 2 && s.learning && Math.random() < 0.01) toast('warn', 'put Align Malign on every track you want aligned');
+      if (s.linked < 2 && s.learning && Math.random() < 0.01) toast('warn', 'put Auto Malign on every track you want aligned');
       wasLearning = s.learning; wasSolved = s.solved;
     } finally { applying--; }
   });

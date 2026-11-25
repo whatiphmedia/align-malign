@@ -38,21 +38,21 @@ jobs:
         run: |
           $art = "build/AlignMalign_artefacts/Release"
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item -Recurse "$art/VST3/Align Malign.vst3" "dist/Align Malign.vst3"
-          Copy-Item "$art/Standalone/Align Malign.exe" "dist/Align Malign (standalone).exe"
+          Copy-Item -Recurse "$art/VST3/Auto Malign.vst3" "dist/Auto Malign.vst3"
+          Copy-Item "$art/Standalone/Auto Malign.exe" "dist/Auto Malign (standalone).exe"
           Copy-Item docs/INSTALL.md dist/INSTALL.md
-          Compress-Archive -Path dist/* -DestinationPath AlignMalign-Windows-x64.zip -Force
+          Compress-Archive -Path dist/* -DestinationPath AutoMalign-Windows-x64.zip -Force
 
       - uses: actions/upload-artifact@v4
         with:
-          name: AlignMalign-Windows-x64
-          path: AlignMalign-Windows-x64.zip
+          name: AutoMalign-Windows-x64
+          path: AutoMalign-Windows-x64.zip
 
       - name: Release (tags)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: AlignMalign-Windows-x64.zip
+          files: AutoMalign-Windows-x64.zip
 
       - name: Latest build (every push to main)
         if: github.ref == 'refs/heads/main'
@@ -63,4 +63,4 @@ jobs:
           prerelease: true
           make_latest: false
           body: Built automatically from the newest commit on main (${{ github.sha }}).
-          files: AlignMalign-Windows-x64.zip
+          files: AutoMalign-Windows-x64.zip

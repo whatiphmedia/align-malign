@@ -50,8 +50,8 @@ juce_add_plugin(AlignMalign
   BUNDLE_ID com.whatiphmedia.alignmalign
   PLUGIN_MANUFACTURER_CODE Wiph
   PLUGIN_CODE AlMg
-  PRODUCT_NAME "Align Malign"
-  DESCRIPTION "Align to anything, then malign it"
+  PRODUCT_NAME "Auto Malign"
+  DESCRIPTION "Auto Malign: align to anything, then malign it"
   FORMATS VST3 Standalone
   VST3_CATEGORIES Fx Tools
   IS_SYNTH FALSE

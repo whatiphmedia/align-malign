@@ -27,7 +27,7 @@ s = rep(s, "function audioTick(t){const B=AU.bands;\n  if(AU.an&&AU.el&&!AU.el.p
         "function audioTick(t){const B=AU.bands;\n  if(AU.ext&&performance.now()-AU.extT<600){for(let l=0;l<NL;l++)B[l]=AU.extB[l]||0;AU.level=AU.extL;}\n  else if(AU.an&&AU.el&&!AU.el.paused){")
 # 2. Learn button (hidden outside the plugin)
 s = rep(s, '<button id="sweep" aria-pressed="false"',
-        '<button id="learn" class="plugin-only" aria-pressed="false" title="Play the song with Align Malign on every track; press again to solve">Learn</button><button id="sweep" aria-pressed="false"')
+        '<button id="learn" class="plugin-only" aria-pressed="false" title="Play the song with Auto Malign on every track; press again to solve">Learn</button><button id="sweep" aria-pressed="false"')
 # 3. plugin-mode CSS
 s = rep(s, "</style>",
         ".plugin-only{display:none}.in-plugin .plugin-only{display:inline-flex}\n"
