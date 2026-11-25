@@ -1,0 +1,66 @@
+name: Build Windows VST3
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install WebView2 SDK (NuGet)
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -OutputDirectory "$env:GITHUB_WORKSPACE\build\_deps\Nuget"
+          # fallback location JUCE also searches
+          Register-PackageSource -ProviderName NuGet -Name nugetRepository -Location https://www.nuget.org/api/v2 -Force -ErrorAction SilentlyContinue | Out-Null
+          Install-Package Microsoft.Web.WebView2 -Scope CurrentUser -RequiredVersion 1.0.1901.177 -Source nugetRepository -Force -ErrorAction SilentlyContinue | Out-Null
+
+      - name: Configure
+        run: cmake -B build -S . -G "Visual Studio 17 2022" -A x64 -DALIGNMALIGN_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel --target am_engine_test AlignMalign_VST3 AlignMalign_Standalone
+
+      - name: Engine test
+        run: build\Release\am_engine_test.exe
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $art = "build/AlignMalign_artefacts/Release"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item -Recurse "$art/VST3/Align Malign.vst3" "dist/Align Malign.vst3"
+          Copy-Item "$art/Standalone/Align Malign.exe" "dist/Align Malign (standalone).exe"
+          Copy-Item docs/INSTALL.md dist/INSTALL.md
+          Compress-Archive -Path dist/* -DestinationPath AlignMalign-Windows-x64.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AlignMalign-Windows-x64
+          path: AlignMalign-Windows-x64.zip
+
+      - name: Release (tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: AlignMalign-Windows-x64.zip
+
+      - name: Latest build (every push to main)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build
+          prerelease: true
+          make_latest: false
+          body: Built automatically from the newest commit on main (${{ github.sha }}).
+          files: AlignMalign-Windows-x64.zip

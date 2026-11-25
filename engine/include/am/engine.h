@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <random>
+#include <string>
 
 namespace am {
 

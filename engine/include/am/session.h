@@ -11,6 +11,7 @@
 #pragma once
 #include "engine.h"
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <memory>
@@ -108,6 +109,7 @@ public:
 
     std::shared_ptr<Slot> join(double sampleRate) {
         std::lock_guard<std::mutex> g(m_);
+        if (!worker_.joinable()) { quit_ = false; worker_ = std::thread([this] { run(); }); }
         auto s = std::make_shared<Slot>(nextId_++);
         slots_.push_back(s);
         if (sampleRate > 0) sr_ = sampleRate;
@@ -117,11 +119,23 @@ public:
         return s;
     }
 
+    // The worker thread lives only while at least one instance is linked. It is joined here, from the last
+    // instance's destructor, never from a static destructor (joining a thread during DLL unload deadlocks on Windows).
     void leave(const std::shared_ptr<Slot>& s) {
-        std::lock_guard<std::mutex> g(m_);
-        slots_.erase(std::remove(slots_.begin(), slots_.end(), s), slots_.end());
-        s->onIR = nullptr;
-        restartAccumulationLocked();
+        std::thread finished;
+        {
+            std::lock_guard<std::mutex> g(m_);
+            slots_.erase(std::remove(slots_.begin(), slots_.end(), s), slots_.end());
+            s->onIR = nullptr;
+            restartAccumulationLocked();
+            if (slots_.empty() && worker_.joinable()) {
+                quit_ = true;
+                learning_ = false;
+                cv_.notify_all();
+                finished = std::move(worker_);
+            }
+        }
+        if (finished.joinable()) finished.join();
     }
 
     void setSampleRate(double sr) {
@@ -161,6 +175,18 @@ public:
         return v;
     }
 
+    void setName(const std::shared_ptr<Slot>& s, std::string name) {
+        std::lock_guard<std::mutex> g(m_);
+        s->name = std::move(name);
+    }
+
+    // Copy of a slot's solved maps and match curve (for saving plugin state).
+    void snapshot(const std::shared_ptr<Slot>& s, Maps& maps, std::vector<float>& matchDb) const {
+        std::lock_guard<std::mutex> g(m_);
+        maps = s->ownMaps;
+        matchDb = s->matchDb;
+    }
+
     // Restoring a saved instance: give it back its maps without a new learn pass.
     void restore(const std::shared_ptr<Slot>& s, Maps maps, std::vector<float> matchDb) {
         std::lock_guard<std::mutex> g(m_);
@@ -171,12 +197,13 @@ public:
     }
 
     ~SessionBus() {
+        // Normally already stopped by the last leave(). If not, don't join during process/DLL teardown.
         { std::lock_guard<std::mutex> g(m_); quit_ = true; cv_.notify_all(); }
-        if (worker_.joinable()) worker_.join();
+        if (worker_.joinable()) worker_.detach();
     }
 
 private:
-    SessionBus() : fft_(kSolveN), win_(hann(kSolveN)) { worker_ = std::thread([this] { run(); }); }
+    SessionBus() : fft_(kSolveN), win_(hann(kSolveN)) {}
 
     void restartAccumulationLocked() {
         order_ = slots_;
