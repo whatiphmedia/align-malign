@@ -67,20 +67,34 @@ class AutoMalign(ControlSurface):
     def _scan(self):
         song = self.song()
         out = []
-        tracks = list(song.tracks) + list(song.return_tracks) + [song.master_track]
-        for t in tracks:
-            self._walk(t.devices, 0, t.name, out)
+        tracks = [(t, self._kind(t)) for t in song.tracks]
+        tracks += [(t, "return") for t in song.return_tracks]
+        tracks.append((song.master_track, "master"))
+        for order, (t, kind) in enumerate(tracks):
+            self._walk(t.devices, 0, t.name, out, kind, order)
         return out
 
-    def _walk(self, devices, base, track_name, out):
+    @staticmethod
+    def _kind(t):
+        # where an Auto Malign sits: group buses (like the master) carry the sum of other tracks
+        try:
+            if getattr(t, "is_foldable", False):
+                return "group"
+            if getattr(t, "has_midi_input", False):
+                return "midi"
+        except Exception:
+            pass
+        return "audio"
+
+    def _walk(self, devices, base, track_name, out, kind, order):
         acc = base
         for d in devices:
             link = self._link_id(d)
             if link:
-                out.append({"id": link, "latency": int(acc), "track": track_name})
+                out.append({"id": link, "latency": int(acc), "track": track_name, "kind": kind, "order": order})
             if getattr(d, "can_have_chains", False):
                 for ch in getattr(d, "chains", []):
-                    self._walk(ch.devices, acc, track_name, out)
+                    self._walk(ch.devices, acc, track_name, out, kind, order)
             acc += self._latency(d)
 
     @staticmethod

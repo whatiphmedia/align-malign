@@ -33,7 +33,7 @@
   const touched = {};
   const fresh = id => performance.now() - (touched[id] || 0) < 450;
   const send = (id, v) => { if (!applying) { touched[id] = performance.now(); J.backend.emitEvent('param', { id, v }); } };
-  const act = (name) => J.backend.emitEvent('action', { name });
+  const act = (name, extra) => J.backend.emitEvent('action', Object.assign({ name }, extra || {}));
 
   // ---- UI -> plugin
   main.sub(v => send('alignment', Math.round((v - 0.5) * 2000) / 10)); // knob 0..1 -> -100 (align) .. +100 (malign)
@@ -101,6 +101,16 @@
       const rg = document.getElementById('pf-latMs');
       if (rg && !fresh('latMs') && document.activeElement !== rg) { rg.value = lm.v; rg.dispatchEvent(new Event('input')); }
       if (s.msg && s.msg !== lastMsg) { lastMsg = s.msg; toast(s.msgOk ? 'ok' : 'warn', s.msg); }
+
+      // Groups: every linked Auto Malign, named by the host; a chip press sets that track's group
+      if (Array.isArray(s.tracks)) {
+        const tb = document.getElementById('groupsTable');
+        const sig = JSON.stringify(s.tracks);
+        if (tb && tb.dataset.sig !== sig) {
+          tb.dataset.sig = sig;
+          buildGroups(tb, s.tracks, (r, g) => act('setGroup', { id: r.id, group: g }));
+        }
+      }
 
       // the scene and meters follow the real output
       AU.ext = 1; AU.extT = performance.now(); AU.extB = s.bands || []; AU.extL = s.level || 0;

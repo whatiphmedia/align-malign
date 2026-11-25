@@ -33,6 +33,12 @@
     the Pro page shows what it found.
   - **Studio One (or Live without the control surface):** type the latency of the synth and plugins in front of
     Auto Malign into Pro page > Alignment > *Latency before this track (manual)*.
+- **Groups** (Pro page > Groups): every linked Auto Malign is listed under its track name. Give tracks recorded
+  from the same source the same letter (kick in + kick out, bass DI + amp): they keep their phase to each other and
+  are aligned as one, and their knob and flavour turn together. Regrouping takes effect immediately from what Learn
+  already heard. **Off** leaves a track out. With the Live control surface, each row also shows where it sits
+  (audio, MIDI, return, group bus, master); group buses and the master are left out automatically, because they
+  carry the other tracks.
 - **Renamed:** the plugin is now **Auto Malign**. If you installed an earlier build, delete the old
   `Align Malign.vst3` folder from `C:\Program Files\Common Files\VST3\` before copying the new one.
 - **Ctrl+click** any knob or slider to reset it to its default (the main knob goes back to 0).

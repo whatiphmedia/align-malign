@@ -36,6 +36,7 @@ AlignMalignEditor::AlignMalignEditor(AlignMalignProcessor& p) : juce::AudioProce
                         if (name == "activate") gActiveEditor = editorId_;
                         else if (name == "learn") proc_.toggleLearn();
                         else if (name == "installLive") proc_.installLiveScript();
+                        else if (name == "setGroup") proc_.setGroup((int)v["id"], v["group"].toString());
                         else if (name == "solve") am::SessionBus::get().requestSolve();
                     });
 

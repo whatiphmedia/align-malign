@@ -83,6 +83,9 @@ public:
 
     // results (guarded by bus mutex)
     std::string name;
+    std::string group;       // "" = on its own, "A".."D" = solved together with the other members, "off" = left out
+    int order = -1;          // position in the host's track list, when known
+    std::string kind;        // where it sits, when the host says (Live control surface): audio, midi, return, group, master
     Maps ownMaps;            // this track's solved maps (index 0 of a 1-track Maps), persisted in plugin state
     std::vector<float> matchDb;
     std::function<void(std::shared_ptr<const IRSet>)> onIR; // set by the plugin; called on the worker thread
@@ -97,6 +100,14 @@ private:
     std::atomic<int64_t> upstreamLatency_{0};
     int64_t expectNext_ = -1, validFrom_ = 0;  // audio-thread only
 };
+
+struct TrackInfo { int id; std::string name, group, kind; bool excluded; int order; };
+
+// Master and group buses carry the sum of other tracks: aligning them against those tracks would fight the tracks
+// themselves, so they are left out of Learn (they pass audio through unchanged). "off" lets the user do the same.
+inline bool excludedFromSolve(const std::string& group, const std::string& kind) {
+    return group == "off" || kind == "master" || kind == "group";
+}
 
 struct SessionStatus {
     int linked = 0;
@@ -183,6 +194,37 @@ public:
         return v;
     }
 
+    std::vector<TrackInfo> tracks() const {
+        std::lock_guard<std::mutex> g(m_);
+        std::vector<TrackInfo> v;
+        for (auto& s : slots_) v.push_back({ s->id(), s->name, s->group, s->kind, excludedFromSolve(s->group, s->kind), s->order });
+        return v;
+    }
+
+    // Regrouping re-solves from what Learn already heard: no new learn pass needed.
+    void setGroup(int slotId, std::string group) {
+        std::lock_guard<std::mutex> g(m_);
+        for (auto& s : slots_)
+            if (s->id() == slotId && s->group != group) {
+                const bool wasOut = excludedFromSolve(s->group, s->kind);
+                s->group = std::move(group);
+                if (wasOut != excludedFromSolve(s->group, s->kind)) restartAccumulationLocked();
+                else solveRequested_ = true;
+                dirty_ = true;
+                cv_.notify_all();
+            }
+    }
+    std::string group(const std::shared_ptr<Slot>& s) const { std::lock_guard<std::mutex> g(m_); return s->group; }
+
+    void setPlace(const std::shared_ptr<Slot>& s, std::string kind, int order) { { std::lock_guard<std::mutex> g(m_); s->order = order; } setKind(s, std::move(kind)); }
+    void setKind(const std::shared_ptr<Slot>& s, std::string kind) {
+        std::lock_guard<std::mutex> g(m_);
+        if (s->kind == kind) return;
+        const bool wasOut = excludedFromSolve(s->group, s->kind);
+        s->kind = std::move(kind);
+        if (wasOut != excludedFromSolve(s->group, s->kind)) { restartAccumulationLocked(); dirty_ = true; cv_.notify_all(); }
+    }
+
     void setName(const std::shared_ptr<Slot>& s, std::string name) {
         std::lock_guard<std::mutex> g(m_);
         s->name = std::move(name);
@@ -215,7 +257,8 @@ private:
 
     // Called with m_ held (message thread). The worker owns the cross-spectra and resets them when it sees a new generation.
     void restartAccumulationLocked() {
-        order_ = slots_;
+        order_.clear();                                    // the tracks Learn listens to
+        for (auto& s : slots_) if (!excludedFromSolve(s->group, s->kind)) order_.push_back(s);
         ++accGen_;
         framesA_ = 0;
     }
@@ -240,6 +283,8 @@ private:
             }
             const bool learn = learning_ && order_.size() >= 2;
             const auto order = order_;
+            std::vector<std::string> groups;
+            for (auto& sl : order) groups.push_back(sl->group);
             bool solveNow = false;
             lk.unlock();
 
@@ -279,7 +324,7 @@ private:
             // 2) solve (no lock held), then hand the maps to the slots
             if (solveNow && cs_.frames > 0 && cs_.T >= 2) {
                 lk.unlock();
-                SolveResult r = computeSolve();
+                SolveResult r = computeSolve(groups);
                 lk.lock();
                 if (seenGen == accGen_) { applySolveLocked(r); dirty_ = true; }
             }
@@ -291,14 +336,37 @@ private:
 
     struct SolveResult { int anchor = 0; std::vector<std::vector<float>> aS, mS, aE, mE; double binHz = 0; int K = 0; };
 
-    SolveResult computeSolve() const {
+    SolveResult computeSolve(const std::vector<std::string>& groups) const {
+        // one variable per group, one per ungrouped track
+        std::vector<int> varOf(groups.size());
+        std::vector<std::string> names;
+        for (size_t t = 0; t < groups.size(); ++t) {
+            if (groups[t].empty()) { varOf[t] = (int)names.size(); names.push_back(""); continue; }
+            auto it = std::find(names.begin(), names.end(), groups[t]);
+            if (it != names.end()) varOf[t] = (int)(it - names.begin());
+            else { varOf[t] = (int)names.size(); names.push_back(groups[t]); }
+        }
+        const int V = (int)names.size();
         SolveResult r;
-        r.anchor = autoAnchor(cs_);
-        r.aS = solve(cs_, r.anchor, alignStandard());
-        r.mS = solve(cs_, r.anchor, malignStandard());
-        r.aE = solve(cs_, r.anchor, alignExtended());
-        r.mE = solve(cs_, r.anchor, malignExtended());
         r.binHz = cs_.binHz; r.K = cs_.K;
+        const auto expand = [&](const std::vector<std::vector<float>>& v) {
+            std::vector<std::vector<float>> out(groups.size());
+            for (size_t t = 0; t < groups.size(); ++t) out[t] = v[(size_t)varOf[t]];
+            return out;
+        };
+        if (V < 2) {                                        // everything in one group: nothing to move it against
+            const std::vector<std::vector<float>> z(1, std::vector<float>((size_t)cs_.K, 0.f));
+            r.aS = r.mS = r.aE = r.mE = expand(z);
+            r.anchor = 0;
+            return r;
+        }
+        const CrossSpectra g = (V == (int)groups.size()) ? cs_ : groupSpectra(cs_, varOf, V);
+        const int a = autoAnchor(g);
+        r.aS = expand(solve(g, a, alignStandard()));
+        r.mS = expand(solve(g, a, malignStandard()));
+        r.aE = expand(solve(g, a, alignExtended()));
+        r.mE = expand(solve(g, a, malignExtended()));
+        r.anchor = (int)(std::find(varOf.begin(), varOf.end(), a) - varOf.begin());
         return r;
     }
 
@@ -322,29 +390,35 @@ private:
         for (size_t t = 0; t < slots_.size(); ++t) {
             auto& s = slots_[t];
             Maps m = s->ownMaps;
+            if (excludedFromSolve(s->group, s->kind)) m.K = -1;   // left out: plays through unchanged
             if (m.K != K) { // no solve yet (or a different sample rate): neutral maps of the right size
                 m.K = K; m.binHz = binHz;
                 m.alignStd = m.malignStd = m.alignExt = m.malignExt = {std::vector<float>(K, 0.f)};
             }
-            Controls c; c.knob = s->controls.knob.load(); c.flavour = (Flavour)s->controls.flavour.load(); c.seed = (uint32_t)s->id() + 1;
+            Controls c; c.knob = s->controls.knob.load(); c.flavour = (Flavour)s->controls.flavour.load(); c.seed = seedOf(*s);
             curves[t] = effectivePhase(m, 0, c);
             mids.push_back(curves[t].mid);
         }
         // Match EQ: only meaningful when the slots are the ones the cross-spectra were measured on.
-        const bool sameSet = (order_ == slots_) && cs_.frames > 0 && cs_.K == K;
-        std::vector<float> match = sameSet ? matchGainDb(cs_, mids) : std::vector<float>();
+        std::vector<std::vector<float>> learnMids;
+        for (size_t t = 0; t < slots_.size(); ++t)
+            if (std::find(order_.begin(), order_.end(), slots_[t]) != order_.end()) learnMids.push_back(mids[t]);
+        const bool sameSet = (int)learnMids.size() == cs_.T && cs_.frames > 0 && cs_.K == K;
+        std::vector<float> match = sameSet ? matchGainDb(cs_, learnMids) : std::vector<float>();
         for (size_t t = 0; t < slots_.size(); ++t) {
             auto& s = slots_[t];
-            if (sameSet) s->matchDb = match;
-            const std::vector<float>& g = s->matchDb.size() == (size_t)K ? s->matchDb : std::vector<float>();
+            const bool out = excludedFromSolve(s->group, s->kind);
+            if (sameSet && !out) s->matchDb = match;
+            const std::vector<float>& g = (!out && s->matchDb.size() == (size_t)K) ? s->matchDb : std::vector<float>();
             const double amt = s->controls.match.load();
             auto set = std::make_shared<IRSet>();
             set->mid = buildIR(curves[t].mid, g, binHz, sr_, amt);
             set->side = buildIR(curves[t].side, g, binHz, sr_, amt);
             if (s->controls.motionOn.load()) {
                 Maps m = s->ownMaps;
+                if (out) m.K = -1;
                 if (m.K != K) { m.K = K; m.binHz = binHz; m.alignStd = m.malignStd = m.alignExt = m.malignExt = {std::vector<float>(K, 0.f)}; }
-                Controls c; c.knob = -s->controls.knob.load(); c.flavour = (Flavour)s->controls.flavour.load(); c.seed = (uint32_t)s->id() + 1;
+                Controls c; c.knob = -s->controls.knob.load(); c.flavour = (Flavour)s->controls.flavour.load(); c.seed = seedOf(*s);
                 const PhaseCurves mc = effectivePhase(m, 0, c);
                 set->midMirror = buildIR(mc.mid, g, binHz, sr_, amt);
                 set->sideMirror = buildIR(mc.side, g, binHz, sr_, amt);
@@ -356,6 +430,14 @@ private:
             set->version = ++irVersion_;
             if (s->onIR) s->onIR(set);
         }
+    }
+
+    // Group members share the flavour's random pattern too, so they stay identical to each other at any setting.
+    static uint32_t seedOf(const Slot& s) {
+        if (s.group.empty()) return (uint32_t)s.id() + 1;
+        uint32_t h = 2166136261u;
+        for (char ch : s.group) { h ^= (uint8_t)ch; h *= 16777619u; }
+        return h | 0x80000000u;
     }
 
     static uint64_t hashIR(const IRSet& s) {

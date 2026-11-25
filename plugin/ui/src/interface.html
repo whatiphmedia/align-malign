@@ -139,10 +139,10 @@ select{font:500 13px var(--mono);border:1.5px solid var(--line);border-radius:0;
 table.groups{width:100%;border-collapse:collapse}
 table.groups td{padding:8px 4px;border-bottom:1px solid var(--dim)}
 table.groups td:first-child{font-weight:650;width:166px}
-input.gname{font:inherit;font-weight:650;color:var(--text);background:transparent;border:0;outline:0;padding:0;margin:0;width:100%;cursor:text;caret-color:var(--align)}
-input.gname::placeholder{color:var(--dim);font-weight:650}
-input.gname:focus,input.gname:focus-visible{outline:0}
-input.gname::selection{background:rgba(57,230,176,.28)}
+table.groups .gname{display:block;font-weight:650;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.groups .gkind{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+table.groups .gout{font-size:12px;color:var(--muted)}
+table.groups td.gempty{color:var(--muted);font-size:12px}
 .chips{display:flex;gap:2px}
 .chips button{padding:5px 12px;font-size:12px}
 .side .mini{font:400 54px/1 var(--mono);letter-spacing:-.02em;color:var(--align);white-space:nowrap}
@@ -1276,6 +1276,26 @@ const plug=document.getElementById('plugin'),tabMain=document.getElementById('pa
 function setPage(pro){plug.classList.toggle('is-pro',pro);tabMain.setAttribute('aria-pressed',pro?'false':'true');tabMain.setAttribute('aria-selected',pro?'false':'true');tabPro.setAttribute('aria-pressed',pro?'true':'false');tabPro.setAttribute('aria-selected',pro?'true':'false');P.pro=pro;requestAnimationFrame(resizeView);}
 tabMain.addEventListener('click',()=>setPage(false));tabPro.addEventListener('click',()=>setPage(true));
 // pro page content
+// Groups table: one row per linked Auto Malign, named by the host. pick(row, group) is called on a chip press.
+const GROUP_OPTS=[['A','A'],['B','B'],['C','C'],['D','D'],['','—'],['off','Off']];
+const KIND_LABEL={audio:'Audio',midi:'MIDI',return:'Return',group:'Group bus',master:'Master'};
+function buildGroups(tb,rows,pick){
+  tb.textContent='';
+  if(!rows.length||rows.length<2){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=2;td.className='gempty';
+    td.textContent='Put Auto Malign on the other tracks you want aligned. They appear here with their track names.';tr.appendChild(td);tb.appendChild(tr);if(!rows.length)return;}
+  for(const r of rows){const tr=document.createElement('tr'),a=document.createElement('td'),b=document.createElement('td');
+    const nm=document.createElement('span');nm.className='gname';nm.textContent=r.name||'Track';a.appendChild(nm);
+    const bus=r.kind==='master'||r.kind==='group';
+    const meta=[KIND_LABEL[r.kind]||'',r.self?'this window':''].filter(Boolean).join(', ');
+    if(meta){const k=document.createElement('span');k.className='gkind';k.textContent=meta;a.appendChild(k);}
+    if(bus){const n=document.createElement('span');n.className='gout';n.textContent='Left out: a bus carries the other tracks, so it plays through unchanged';b.appendChild(n);}
+    else{const ch=document.createElement('div');ch.className='chips';ch.setAttribute('role','group');ch.setAttribute('aria-label',`Group for ${r.name||'track'}`);
+      for(const [v,l] of GROUP_OPTS){const bt=document.createElement('button');bt.textContent=l;bt.title=v==='off'?'Leave this track out of the alignment':v?`Group ${v}`:'On its own';
+        bt.setAttribute('aria-pressed',(r.group||'')===v?'true':'false');bt.addEventListener('click',()=>pick(r,v));ch.appendChild(bt);}
+      b.appendChild(ch);}
+    tr.append(a,b);tb.appendChild(tr);}
+}
+
 const PRO=[
  {name:'Alignment',lead:'How the phase solver lines up every track before you creatively push it apart.',fields:[
    {t:'range',k:'loHz',name:'Lowest frequency rotated',min:2.7,max:200,step:0.1,v:2.7,fmt:v=>`${v<10?v.toFixed(1):Math.round(v)} Hz`,hint:'Down to 2.7 Hz with the long analysis window.'},
@@ -1302,7 +1322,7 @@ const PRO=[
    {t:'range',k:'tamt',name:'Transient alignment',min:0,max:1,step:0.01,v:0.6,fmt:v=>`${Math.round(v*100)}%`},
    {t:'range',k:'xover',name:'Crossover',min:300,max:4000,step:10,v:1000,fmt:v=>`${v} Hz`},
    {t:'range',k:'tmax',name:'Largest shift',min:0.1,max:10,step:0.1,v:2,fmt:v=>`${v.toFixed(1)} ms`}]},
- {name:'Groups',lead:'Tracks recorded from the same source move together.',groups:[['Kick in','A'],['Kick out','A'],['Snare top','B'],['Snare bottom','B'],['Bass DI','C'],['Bass amp','C'],['Overheads','—'],['Lead vox','—']]},
+ {name:'Groups',lead:'Tracks recorded from the same source move together: they keep their phase to each other and are aligned as one. Regrouping re-solves from what Learn already heard.',groups:[{id:1,name:'Kick in',group:'A',kind:'audio'},{id:2,name:'Kick out',group:'A',kind:'audio'},{id:3,name:'Snare top',group:'B',kind:'audio'},{id:4,name:'Snare bottom',group:'B',kind:'audio'},{id:5,name:'Bass DI',group:'C',kind:'audio',self:true},{id:6,name:'Bass amp',group:'C',kind:'audio'},{id:7,name:'Synth pad',group:'',kind:'midi'},{id:8,name:'Reverb',group:'',kind:'return'},{id:9,name:'Drums',group:'',kind:'group',excluded:true},{id:10,name:'Master',group:'',kind:'master',excluded:true}]},
  {name:'Flavour',lead:'Fine control for the selected flavour.',fields:[
    {t:'range',k:'famt',name:'Amount',min:0,max:1,step:0.01,v:0.7,fmt:v=>`${Math.round(v*100)}%`},
    {t:'range',k:'frate',name:'Movement',min:0,max:1,step:0.01,v:0.35,fmt:v=>`${Math.round(v*100)}%`,link:'motion'},
@@ -1316,9 +1336,9 @@ const PRO=[
    {t:'switch',k:'tags',name:'Value tags in the view',v:true,on:v=>{P.pro=v;}}]}];
 {const rail=document.getElementById('rail'),panel=document.getElementById('panel');let cur=0;
   function render(){panel.innerHTML='';const sec=PRO[cur];const h=document.createElement('h2');h.textContent=sec.name;const l=document.createElement('p');l.className='lead';l.textContent=sec.lead;panel.append(h,l);
-    if(sec.groups){const tb=document.createElement('table');tb.className='groups';for(const g of sec.groups){const tr=document.createElement('tr'),a=document.createElement('td'),b=document.createElement('td');const nm=document.createElement('input');nm.type='text';nm.className='gname';nm.value=g[0];nm.placeholder='Group name';nm.setAttribute('aria-label','Group name');nm.spellcheck=false;nm.addEventListener('input',()=>{g[0]=nm.value;});nm.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'||e.key==='Escape')nm.blur();});a.appendChild(nm);
-        const ch=document.createElement('div');ch.className='chips';for(const opt of ['A','B','C','—']){const bt=document.createElement('button');bt.textContent=opt;bt.setAttribute('aria-pressed',opt===g[1]?'true':'false');bt.addEventListener('click',()=>{g[1]=opt;ch.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===bt?'true':'false'));});ch.appendChild(bt);}
-        b.appendChild(ch);tr.append(a,b);tb.appendChild(tr);}panel.appendChild(tb);return;}
+    if(sec.groups){const tb=document.createElement('table');tb.className='groups';tb.id='groupsTable';
+      const demo=(r,g)=>{r.group=g;buildGroups(tb,sec.groups,demo);};buildGroups(tb,sec.groups,demo);   // the plugin replaces these rows with the real tracks
+      panel.appendChild(tb);return;}
     const grid=document.createElement('div');grid.className='grid';
     for(const f of sec.fields){const box=document.createElement('div');box.className='field';const idf='pf-'+f.k;
       if(f.t==='range'){if(f.link)f.v=MAC[f.link].get();box.innerHTML=`<div class="row"><label for="${idf}"></label><output for="${idf}"></output></div><input type="range" id="${idf}">`;box.querySelector('label').textContent=f.name;

@@ -111,6 +111,23 @@ inline int autoAnchor(const CrossSpectra& cs, double fHi = 1000.0) {
     return best;
 }
 
+// Grouping: tracks recorded from one source (kick in + kick out, bass DI + amp) are solved as ONE variable, so the
+// phase between them stays exactly as recorded and the group moves as a unit. varOf[t] is track t's variable
+// (0..V-1); a variable's cross-spectrum with another is the sum over every member pair.
+inline CrossSpectra groupSpectra(const CrossSpectra& cs, const std::vector<int>& varOf, int V) {
+    CrossSpectra r;
+    r.T = V; r.K = cs.K; r.sr = cs.sr; r.binHz = cs.binHz; r.frames = cs.frames;
+    r.C.assign((size_t)V * V * cs.K, cplx(0, 0));
+    for (int i = 0; i < cs.T; ++i)
+        for (int j = 0; j < cs.T; ++j) {
+            const int a = varOf[(size_t)i], b = varOf[(size_t)j];
+            if (a > b) continue;                     // stored as conj of (b, a)
+            cplx* c = &r.C[((size_t)a * V + b) * cs.K];
+            for (int k = 0; k < cs.K; ++k) c[k] += cs.at(i, j, k);
+        }
+    return r;
+}
+
 // Returns phase[t][k] (radians) for every track t and solve bin k (size cs.K).
 inline std::vector<std::vector<float>> solve(const CrossSpectra& cs, int anchor, const Profile& p, int sweeps = 8) {
     const int T = cs.T, K = cs.K;

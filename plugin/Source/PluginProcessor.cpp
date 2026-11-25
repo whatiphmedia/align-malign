@@ -8,13 +8,15 @@ namespace {
 // Session linking for the macro controls: with scope = Session, moving a control on one instance moves it on
 // every linked instance (so a 12-track session is driven from any one plugin window).
 struct LinkHub {
-    struct Ev { uint64_t seq; int source; juce::String id; float v; };
+    struct Ev { uint64_t seq; int source; juce::String id; float v; juce::String group; bool session; };
     static LinkHub& get() { static LinkHub h; return h; }
 
-    void publish(int source, const juce::String& id, float v) {
+    // session: the sender is in Session scope (everyone in Session scope follows). group: the sender's group
+    // (its members follow, whatever their scope).
+    void publish(int source, const juce::String& id, float v, const juce::String& group, bool session) {
         const std::lock_guard<std::mutex> g(m);
-        evs.push_back({ ++seq, source, id, v });
-        latest[id] = evs.back();
+        evs.push_back({ ++seq, source, id, v, group, session });
+        if (session) latest[id] = evs.back();
         while (evs.size() > 512) evs.pop_front();
     }
     std::vector<Ev> since(uint64_t after, uint64_t& newest) {
@@ -42,7 +44,7 @@ struct LinkHub {
 // instance exists (started by the first, stopped by the last; never torn down during DLL unload).
 class LiveLink : private juce::Thread {
 public:
-    struct Info { int latency = 0; juce::String track; double when = 0; };
+    struct Info { int latency = 0, order = -1; juce::String track, kind; double when = 0; };
     static LiveLink& get() { static LiveLink l; return l; }
 
     void retain() { const std::lock_guard<std::mutex> g(m_); if (refs_++ == 0) startThread(); }
@@ -84,6 +86,8 @@ private:
         if (auto* arr = v["tracks"].getArray())
             for (auto& t : *arr) {
                 Info i; i.latency = juce::jmax(0, (int)t["latency"]); i.track = t["track"].toString(); i.when = lastPacket_;
+                i.kind = t["kind"].toString();
+                i.order = t.hasProperty("order") ? (int)t["order"] : -1;
                 map_[(int)t["id"]] = i;
             }
     }
@@ -95,6 +99,8 @@ private:
 };
 
 const char* kLinked[] = { "alignment", "match", "width", "motion", "mix", "flavour", "ab", "delta" };
+// what a group shares even outside Session scope: everything that shapes the phase correction
+bool groupLinked(const juce::String& id) { return id == "alignment" || id == "flavour" || id == "motion" || id == "match"; }
 
 juce::String floatsToBase64(const std::vector<float>& v) {
     juce::MemoryBlock mb(v.data(), v.size() * sizeof(float));
@@ -313,7 +319,12 @@ void AlignMalignProcessor::timerCallback() {
     {
         LiveLink::Info info;
         int lat = 0;
-        if (pLatAuto_->get() && LiveLink::get().lookup(linkId_, info)) { lat = info.latency; latSource_ = "live"; latTrack_ = info.track; }
+        const bool fromLive = LiveLink::get().lookup(linkId_, info);
+        if (fromLive) {                                     // Live knows this track's name and where it sits
+            bus.setPlace(slot_, info.kind.toStdString(), info.order);
+            if (info.track.isNotEmpty() && info.track != trackName_) { trackName_ = info.track; bus.setName(slot_, trackName_.toStdString()); }
+        }
+        if (pLatAuto_->get() && fromLive) { lat = info.latency; latSource_ = "live"; latTrack_ = info.track; }
         else if (pLatMs_->get() > 0.f) { lat = juce::roundToInt(pLatMs_->get() * 0.001 * sampleRate_); latSource_ = "manual"; }
         else latSource_ = "none";
         latUsedMs_ = lat * 1000.0 / sampleRate_;
@@ -333,20 +344,26 @@ void AlignMalignProcessor::timerCallback() {
         bus.controlsChanged();
     }
 
-    // 2) session linking of the macro controls
+    // 2) linking of the macro controls: Session scope links every instance in Session scope; a group links its
+    //    members whatever their scope (so kick in and kick out always turn together).
     auto& hub = LinkHub::get();
-    if (scope_ != "session") { lastPublished_.clear(); hub.since(UINT64_MAX, linkSeqSeen_); adopted_ = true; return; }
+    const std::string g = bus.group(slot_);
+    const juce::String grp = (g.empty() || g == "off") ? juce::String() : juce::String(g);
+    const bool session = scope_ == "session";
+    if (!session && grp.isEmpty()) { lastPublished_.clear(); hub.since(UINT64_MAX, linkSeqSeen_); adopted_ = true; return; }
     std::vector<LinkHub::Ev> evs;
     if (!adopted_) {
         adopted_ = true;
-        if (stateRestored_) hub.since(UINT64_MAX, linkSeqSeen_);   // a saved instance keeps its own values
-        else evs = hub.latestValues(linkSeqSeen_);                 // a new instance adopts the session's values
+        if (stateRestored_ || !session) hub.since(UINT64_MAX, linkSeqSeen_);   // a saved instance keeps its own values
+        else evs = hub.latestValues(linkSeqSeen_);                             // a new instance adopts the session's values
     } else {
         evs = hub.since(linkSeqSeen_, linkSeqSeen_);
     }
     applyingLinked_ = true;
     for (auto& e : evs) {
         if (e.source == slot_->id()) continue;
+        const bool follow = (session && e.session) || (grp.isNotEmpty() && e.group == grp && groupLinked(e.id));
+        if (!follow) continue;
         if (auto* p = apvts.getParameter(e.id)) {
             if (std::abs(p->getValue() - e.v) > 1e-5f) p->setValueNotifyingHost(e.v);
             lastPublished_[e.id] = e.v;
@@ -354,11 +371,12 @@ void AlignMalignProcessor::timerCallback() {
     }
     applyingLinked_ = false;
     for (const char* id : kLinked) {
+        if (!session && !groupLinked(id)) continue;
         auto* p = apvts.getParameter(id);
         const float v = p->getValue();
         auto it = lastPublished_.find(id);
         if (it == lastPublished_.end()) { lastPublished_[id] = v; continue; }   // first sight: don't broadcast defaults
-        if (std::abs(it->second - v) > 1e-5f) { it->second = v; hub.publish(slot_->id(), id, v); }
+        if (std::abs(it->second - v) > 1e-5f) { it->second = v; hub.publish(slot_->id(), id, v, grp, session); }
     }
 }
 
@@ -402,9 +420,24 @@ juce::var AlignMalignProcessor::makeUIState() {
     o->setProperty("seconds", st.seconds);
     o->setProperty("solved", st.solved);
     o->setProperty("track", trackName_);
-    juce::Array<juce::var> names;
-    for (auto& n : am::SessionBus::get().trackNames()) names.add(juce::String(n));
+    juce::Array<juce::var> names, tracks;
+    auto list = am::SessionBus::get().tracks();
+    std::stable_sort(list.begin(), list.end(), [](const am::TrackInfo& a, const am::TrackInfo& b) {
+        return (a.order < 0 ? 1 << 30 : a.order) < (b.order < 0 ? 1 << 30 : b.order);   // Live's track order when known
+    });
+    for (auto& t : list) {
+        names.add(juce::String(t.name));
+        auto* r = new juce::DynamicObject();
+        r->setProperty("id", t.id);
+        r->setProperty("name", juce::String(t.name));
+        r->setProperty("group", juce::String(t.group));
+        r->setProperty("kind", juce::String(t.kind));
+        r->setProperty("excluded", t.excluded);
+        r->setProperty("self", t.id == slot_->id());
+        tracks.add(juce::var(r));
+    }
     o->setProperty("names", names);
+    o->setProperty("tracks", tracks);
     o->setProperty("latAuto", pLatAuto_->get());
     o->setProperty("latMs", pLatMs_->get());
     o->setProperty("latSource", latSource_);
@@ -418,6 +451,11 @@ juce::var AlignMalignProcessor::makeUIState() {
     return juce::var(o);
 }
 
+void AlignMalignProcessor::setGroup(int slotId, const juce::String& group) {
+    const juce::String g = (group == "A" || group == "B" || group == "C" || group == "D" || group == "off") ? group : juce::String();
+    am::SessionBus::get().setGroup(slotId, g.toStdString());
+}
+
 void AlignMalignProcessor::updateTrackProperties(const TrackProperties& props) {
     if (props.name.isNotEmpty()) trackName_ = props.name;
     am::SessionBus::get().setName(slot_, trackName_.toStdString());
@@ -428,6 +466,7 @@ void AlignMalignProcessor::getStateInformation(juce::MemoryBlock& dest) {
     auto state = apvts.copyState();
     state.setProperty("scope", scope_, nullptr);
     state.setProperty("track", trackName_, nullptr);
+    state.setProperty("group", juce::String(am::SessionBus::get().group(slot_)), nullptr);
     am::Maps maps;
     std::vector<float> match;
     am::SessionBus::get().snapshot(slot_, maps, match);
@@ -452,6 +491,8 @@ void AlignMalignProcessor::setStateInformation(const void* data, int size) {
     if (!state.isValid()) return;
     scope_ = state.getProperty("scope", "session").toString();
     trackName_ = state.getProperty("track", trackName_).toString();
+    am::SessionBus::get().setName(slot_, trackName_.toStdString());
+    setGroup(slot_->id(), state.getProperty("group", "").toString());
     auto mt = state.getChildWithName("Maps");
     if (mt.isValid()) {
         am::Maps maps;

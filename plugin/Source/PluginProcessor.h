@@ -48,6 +48,7 @@ public:
     void setParamFromUI(const juce::String& id, const juce::var& value);
     void toggleLearn();
     void installLiveScript();
+    void setGroup(int slotId, const juce::String& group);   // any window can set any linked track's group
     juce::var makeUIState();               // params + session status + meters for the web UI
     juce::String scope() const { return scope_; }
 
