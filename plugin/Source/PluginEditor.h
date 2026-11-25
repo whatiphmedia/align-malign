@@ -18,6 +18,8 @@ private:
     std::optional<juce::WebBrowserComponent::Resource> getResource(const juce::String& url);
     juce::Array<juce::var> spectrumBands();
 
+    static constexpr int designW = 1376, designH = 1118;   // the interface's design size (landscape)
+    bool fixingAspect_ = false;
     AlignMalignProcessor& proc_;
     std::unique_ptr<juce::WebBrowserComponent> web_;
     juce::dsp::FFT fft_{ 11 };                         // 2048 points

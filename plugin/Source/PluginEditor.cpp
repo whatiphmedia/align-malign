@@ -37,7 +37,6 @@ AlignMalignEditor::AlignMalignEditor(AlignMalignProcessor& p) : juce::AudioProce
     web_->goToURL(juce::WebBrowserComponent::getResourceProviderRoot());
 
     // The interface scales uniformly (see bridge.js), so the window keeps the design's aspect ratio.
-    constexpr int designW = 1376, designH = 1118;
     setResizable(true, true);
     setResizeLimits(designW * 45 / 100, designH * 45 / 100, designW * 16 / 10, designH * 16 / 10);
     if (auto* c = getConstrainer()) c->setFixedAspectRatio((double)designW / designH);
@@ -47,7 +46,21 @@ AlignMalignEditor::AlignMalignEditor(AlignMalignProcessor& p) : juce::AudioProce
 
 AlignMalignEditor::~AlignMalignEditor() { stopTimer(); }
 
-void AlignMalignEditor::resized() { if (web_) web_->setBounds(getLocalBounds()); }
+void AlignMalignEditor::resized() {
+    // Always landscape, always the design's proportions: if a host hands us a different shape (e.g. a tall window),
+    // snap back to the design aspect ratio based on the width. The page itself also letterboxes, so nothing ever scrolls.
+    const double ar = (double)designW / designH;
+    if (getHeight() > 0 && std::abs((double)getWidth() / getHeight() - ar) > 0.02 && !fixingAspect_) {
+        fixingAspect_ = true;
+        juce::Component::SafePointer<AlignMalignEditor> sp(this);
+        juce::MessageManager::callAsync([sp, ar] {
+            if (sp == nullptr) return;
+            sp->setSize(sp->getWidth(), juce::roundToInt(sp->getWidth() / ar));
+            sp->fixingAspect_ = false;
+        });
+    }
+    if (web_) web_->setBounds(getLocalBounds());
+}
 
 std::optional<juce::WebBrowserComponent::Resource> AlignMalignEditor::getResource(const juce::String& url) {
     const auto path = url.fromFirstOccurrenceOf(juce::WebBrowserComponent::getResourceProviderRoot(), false, false)

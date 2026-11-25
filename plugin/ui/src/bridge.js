@@ -1,24 +1,31 @@
 /* Align/Malign plugin bridge: connects the HTML interface to the plugin when it runs inside the
    plugin window (JUCE WebBrowserComponent with native integration). In a normal browser this does nothing. */
+// ---- scale to fit (always on in the plugin build): the layout keeps its full design width and the whole interface
+// scales uniformly to the window. No scrolling, ever.
 (function () {
-  const J = window.__JUCE__;
-  if (!J || !J.backend) return;
-  document.documentElement.classList.add('in-plugin');
-
-  // ---- scale to fit: the layout keeps its full design width and the whole interface scales down uniformly
   const DW = 1376, DH = 1118;   // .plugin (1340 x 1082 px) + margins; the main page is the tallest view
   const plug = document.querySelector('.plugin');
   let lastScale = 0;
   const fit = () => {
-    const s = Math.max(0.3, Math.min(innerWidth / DW, innerHeight / DH));
+    const s = Math.max(0.2, Math.min(innerWidth / DW, innerHeight / DH));
     plug.style.transform = `translateX(-50%) scale(${s})`;
+    plug.style.top = `${Math.max(0, (innerHeight - DH * s) / 2) + 18 * s}px`;   // margins scale too; centred vertically
+    scrollTo(0, 0);
     if (Math.abs(s - lastScale) > 1e-3) {
       lastScale = s;
       requestAnimationFrame(() => { resizeView(); FX.forEach(f => f.size && f.size()); });
     }
   };
   addEventListener('resize', fit);
+  addEventListener('scroll', () => scrollTo(0, 0));
+  new ResizeObserver(fit).observe(document.documentElement);
   fit();
+})(0);
+
+// ---- connection to the plugin. JUCE injects window.__JUCE__; wait for it briefly in case it arrives after the page.
+(function connect(tries) {
+  const J = window.__JUCE__;
+  if (!J || !J.backend) { if (tries < 100) setTimeout(() => connect(tries + 1), 50); return; }
 
   let applying = 0;
   const send = (id, v) => { if (!applying) J.backend.emitEvent('param', { id, v }); };
@@ -77,4 +84,4 @@
       wasLearning = s.learning; wasSolved = s.solved;
     } finally { applying--; }
   });
-})();
+})(0);
