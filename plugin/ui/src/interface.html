@@ -1316,7 +1316,7 @@ const REFINE={
    {t:'info',k:'ppnotes',name:'Phantom notes',v:'Play MIDI into this track. Live: on a MIDI track set MIDI To > this track > Auto Malign. Best on headphones.'},
    {t:'select',k:'ppmode',name:'Mode',opts:['Huggins (headphones)','Ghost (mono-safe)'],v:0,hint:'Huggins makes the note out of the difference between your ears. Ghost plays tuned resonators into the stereo side.'},
    {t:'range',k:'ppassist',name:'Assist',min:0,max:1,step:0.01,v:0.25,fmt:pct,hint:'A tuned resonator under the phase cue helps the ear lock on (25% was clearest on a full mix). In Ghost mode this is the note level.'},
-   {t:'range',k:'pppurity',name:'Purity',min:0,max:1,step:0.01,v:0.7,fmt:pct,hint:'Removes the resonator’s noise, keeping only the note and its harmonics. Higher is cleaner and more tonal.'},
+   {t:'range',k:'pppurity',name:'Purity',min:0,max:1,step:0.01,v:0.7,fmt:pct,hint:'Removes noise: keeps only the note and its harmonics in the resonator, and narrows the carrier to the note. Higher is cleaner and more tonal.'},
    {t:'range',k:'ppcarrier',name:'Carrier',min:0,max:1,step:0.01,v:0.35,fmt:pct,hint:'Identical sound in both ears around each note, for the cue to ride on (this is meant to be noise unless you choose a source). Follows velocity.'},
    {t:'range',k:'ppstrength',name:'Strength',min:0,max:1,step:0.01,v:0.5,fmt:pct,hint:'Width of the phase sweep and of the mono zone around each note.'},
    {t:'switch',k:'ppfold',name:'Fold notes into the sweet spot (250–600 Hz)',v:true,hint:'Keeps each note name but moves it to where the ears follow phase best.'},

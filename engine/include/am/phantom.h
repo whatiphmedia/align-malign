@@ -100,7 +100,7 @@ private:
         int nPart = 0;
         Biquad hp, lp;                                      // resonator input band
         std::array<Biquad, kPartials> clean;                // narrow bands on the note's harmonics (Purity)
-        int nClean = 0; double fClean = 0, purityApplied = -1;
+        int nClean = 0; double fClean = 0, purityApplied = -1, purityCar = -1;
         std::vector<float> comb; int cw = 0; double lp1 = 0;
         double ry = 1e-9, gain = 0;                         // resonator level control
         uint64_t age = 0;
@@ -153,10 +153,11 @@ private:
             if (fk > 1500.0 || fk > sr_ * 0.4) break;
             v.ap[(size_t)v.nPart].allpass(fk, 1.0 / bw, sr_);           // a full turn across ~bw of the note
             v.collapse[(size_t)v.nPart].bandpass(fk, 1.0 / (5.0 * bw), sr_);  // mono zone, ~5x the sweep band
-            v.car[(size_t)v.nPart].bandpass(fk, 1.0 / (3.0 * bw), sr_);
+            // carrier band: 3x the sweep band at Purity 0, narrowing to ~0.8x at full Purity (less hiss between notes)
+            v.car[(size_t)v.nPart].bandpass(fk, 1.0 / ((3.0 - 2.2 * std::clamp((double)p_.purity, 0.0, 1.0)) * bw), sr_);
             ++v.nPart;
         }
-        v.fApplied = f;
+        v.fApplied = f; v.purityCar = p_.purity;
     }
 
     void retuneClean(Voice& v, double f, double pur) {
@@ -200,7 +201,7 @@ private:
                 // pitch: glide + bend, retune the filters every 32 samples if it moved
                 v.f += (v.fTarget - v.f) * glideA;
                 const double f = v.f * bendMul;
-                if (std::abs(f - v.fApplied) > 1e-4 * f && ((i & 31) == 0 || v.fApplied == 0)) retune(v, f);
+                if ((std::abs(f - v.fApplied) > 1e-4 * f || std::abs(p_.purity - v.purityCar) > 0.02) && ((i & 31) == 0 || v.fApplied == 0)) retune(v, f);
                 const double e = v.env, depth = 0.3 + 0.7 * v.vel;
                 // resonator (both modes): tuned comb fed by the music, added to the side only
                 const double ex = v.lp.run(v.hp.run((float)(xs * srcNorm))) * e;
