@@ -97,9 +97,9 @@ Play pitches made of stereo phase with MIDI. Best on headphones.
   the second menu. Studio One: set an instrument track's output to the Auto Malign insert. Notes land on the grid
   (they are scheduled one plugin latency later, which the host compensates).
 - **Mode:** *Huggins* makes each note out of the difference between your ears (a phase illusion; the cue disappears
-  on speakers and in mono). *Ghost* plays resonators tuned to the notes into the stereo side only: clear notes that
+  on speakers and in mono). *Malodics* plays resonators tuned to the notes into the stereo side only: clear notes that
   cancel completely in mono.
-- **Assist** (25%): a tuned resonator under the Huggins cue so the ear locks on; in Ghost mode the note level.
+- **Assist** (25%): a tuned resonator under the Huggins cue so the ear locks on; in Malodics mode the note level.
   **Purity** (70%): removes noise after the notes are made: keeps only the note and its harmonics in the resonator
   and narrows the carrier to the note. **Carrier** (35%): identical sound in both ears around each note for the cue
   to ride on; follows velocity. **Carrier fills gaps only** (on): noise is added only where the track itself has

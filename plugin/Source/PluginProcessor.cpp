@@ -140,7 +140,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout AlignMalignProcessor::create
     l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "srot", 1 }, "Side rotation", NormalisableRange<float>(-180.f, 180.f, 1.f), 0.f,
                                                 AudioParameterFloatAttributes().withLabel("deg")));
     // Phantom notes (Refine flavour > PHANTOM): MIDI-played pitches made of stereo phase
-    l.add(std::make_unique<AudioParameterChoice>(ParameterID{ "ppmode", 1 }, "Phantom mode", StringArray{ "Huggins", "Ghost" }, 0));
+    l.add(std::make_unique<AudioParameterChoice>(ParameterID{ "ppmode", 1 }, "Phantom mode", StringArray{ "Huggins", "Malodics" }, 0));
     l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppassist", 1 }, "Phantom assist", NormalisableRange<float>(0.f, 1.f), 0.25f));
     l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "pppurity", 1 }, "Phantom purity", NormalisableRange<float>(0.f, 1.f), 0.7f));
     l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppcarrier", 1 }, "Phantom carrier", NormalisableRange<float>(0.f, 1.f), 0.35f));
