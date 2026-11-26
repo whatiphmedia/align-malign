@@ -117,7 +117,7 @@ std::vector<float> base64ToFloats(const juce::String& s) {
 } // namespace
 
 juce::StringArray AlignMalignProcessor::flavourNames() {
-    return { "FUSE", "ERASE", "GHOST", "PHANTOM", "UNMASK", "ENVELOP", "CURVE", "DISPERSE" };
+    return { "FUSE", "ERASE", "GHOST", "MALODICS", "UNMASK", "ENVELOP", "CURVE", "DISPERSE" };
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout AlignMalignProcessor::createLayout() {
@@ -139,24 +139,24 @@ juce::AudioProcessorValueTreeState::ParameterLayout AlignMalignProcessor::create
                                                 AudioParameterFloatAttributes().withLabel("Hz")));
     l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "srot", 1 }, "Side rotation", NormalisableRange<float>(-180.f, 180.f, 1.f), 0.f,
                                                 AudioParameterFloatAttributes().withLabel("deg")));
-    // Phantom notes (Refine flavour > PHANTOM): MIDI-played pitches made of stereo phase
-    l.add(std::make_unique<AudioParameterChoice>(ParameterID{ "ppmode", 1 }, "Phantom mode", StringArray{ "Huggins", "Malodics" }, 0));
-    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppassist", 1 }, "Phantom assist", NormalisableRange<float>(0.f, 1.f), 0.25f));
-    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "pppurity", 1 }, "Phantom purity", NormalisableRange<float>(0.f, 1.f), 0.7f));
-    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppcarrier", 1 }, "Phantom carrier", NormalisableRange<float>(0.f, 1.f), 0.35f));
-    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppstrength", 1 }, "Phantom strength", NormalisableRange<float>(0.f, 1.f), 0.5f));
-    l.add(std::make_unique<AudioParameterBool>(ParameterID{ "ppfold", 1 }, "Phantom sweet-spot folding", true));
-    l.add(std::make_unique<AudioParameterBool>(ParameterID{ "ppfill", 1 }, "Phantom carrier fills gaps only", true));
-    l.add(std::make_unique<AudioParameterInt>(ParameterID{ "pppartials", 1 }, "Phantom harmonics", 1, 6, 6));
-    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppattack", 1 }, "Phantom attack", NormalisableRange<float>(1.f, 500.f, 0.f, 0.4f), 15.f,
+    // Malodic notes (Refine flavour > MALODICS): MIDI-played pitches made of stereo phase
+    l.add(std::make_unique<AudioParameterChoice>(ParameterID{ "ppmode", 1 }, "Malodics mode", StringArray{ "Huggins", "Ghost" }, 0));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppassist", 1 }, "Malodics assist", NormalisableRange<float>(0.f, 1.f), 0.25f));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "pppurity", 1 }, "Malodics purity", NormalisableRange<float>(0.f, 1.f), 0.7f));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppcarrier", 1 }, "Malodics carrier", NormalisableRange<float>(0.f, 1.f), 0.35f));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppstrength", 1 }, "Malodics strength", NormalisableRange<float>(0.f, 1.f), 0.5f));
+    l.add(std::make_unique<AudioParameterBool>(ParameterID{ "ppfold", 1 }, "Malodics sweet-spot folding", true));
+    l.add(std::make_unique<AudioParameterBool>(ParameterID{ "ppfill", 1 }, "Malodics carrier fills gaps only", true));
+    l.add(std::make_unique<AudioParameterInt>(ParameterID{ "pppartials", 1 }, "Malodics harmonics", 1, 6, 6));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppattack", 1 }, "Malodics attack", NormalisableRange<float>(1.f, 500.f, 0.f, 0.4f), 15.f,
                                                 AudioParameterFloatAttributes().withLabel("ms")));
-    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "pprelease", 1 }, "Phantom release", NormalisableRange<float>(5.f, 3000.f, 0.f, 0.4f), 250.f,
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "pprelease", 1 }, "Malodics release", NormalisableRange<float>(5.f, 3000.f, 0.f, 0.4f), 250.f,
                                                 AudioParameterFloatAttributes().withLabel("ms")));
-    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppglide", 1 }, "Phantom glide", NormalisableRange<float>(0.f, 1000.f, 0.f, 0.4f), 0.f,
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppglide", 1 }, "Malodics glide", NormalisableRange<float>(0.f, 1000.f, 0.f, 0.4f), 0.f,
                                                 AudioParameterFloatAttributes().withLabel("ms")));
-    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppbend", 1 }, "Phantom bend range", NormalisableRange<float>(0.f, 24.f, 1.f), 2.f,
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppbend", 1 }, "Malodics bend range", NormalisableRange<float>(0.f, 24.f, 1.f), 2.f,
                                                 AudioParameterFloatAttributes().withLabel("st")));
-    l.add(std::make_unique<AudioParameterChoice>(ParameterID{ "ppsource", 1 }, "Phantom source",
+    l.add(std::make_unique<AudioParameterChoice>(ParameterID{ "ppsource", 1 }, "Malodics source",
                                                  StringArray{ "This track + noise", "Sidechain input", "Session track" }, 0));
     // Latency in front of this instance (synths/plugins before it on the track): read from Live, or typed in.
     l.add(std::make_unique<AudioParameterBool>(ParameterID{ "latauto", 1 }, "Latency before: from Live", true));
@@ -307,7 +307,7 @@ void AlignMalignProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
 
     // Phantom notes: MIDI is scheduled one plugin latency later, so after the host's delay compensation each note
     // lands exactly where it sits on the timeline.
-    const bool ppOn = pFlavour_->getIndex() == 3;          // PHANTOM
+    const bool ppOn = pFlavour_->getIndex() == 3;          // MALODICS
     if (ppOn != phantomOn_.load(std::memory_order_relaxed)) { if (!ppOn) phantom_.allOff(); phantomOn_.store(ppOn); }
     const int64_t clock0 = phantom_.clock();
     for (const auto meta : midi) {

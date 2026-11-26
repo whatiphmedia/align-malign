@@ -88,18 +88,18 @@
 the mid below the set frequency, so the low end stays mono-safe whatever the flavour does (Off by default); *Side
 rotation* turns the side against the mid above that point, a phase widener; *Width* as on the main page.
 **Groups:** see above. **Refine flavour:** changes with the selected flavour. Every flavour has *Amount* (how deep
-the malign flavours go at a given knob position, 100% by default), *Movement* and *Mix*; PHANTOM adds Phantom notes
+the malign flavours go at a given knob position, 100% by default), *Movement* and *Mix*; MALODICS adds Malodic notes
 (below). **Display:** frame rate and value tags (window only).
 
-## Phantom notes (Refine flavour, PHANTOM selected)
+## Malodic notes (Refine flavour, MALODICS selected)
 Play pitches made of stereo phase with MIDI. Best on headphones.
 - **Route MIDI to it.** Live: on a MIDI track, set *MIDI To* to the track with Auto Malign, then pick Auto Malign in
   the second menu. Studio One: set an instrument track's output to the Auto Malign insert. Notes land on the grid
   (they are scheduled one plugin latency later, which the host compensates).
 - **Mode:** *Huggins* makes each note out of the difference between your ears (a phase illusion; the cue disappears
-  on speakers and in mono). *Malodics* plays resonators tuned to the notes into the stereo side only: clear notes that
+  on speakers and in mono). *Ghost* plays resonators tuned to the notes into the stereo side only: clear notes that
   cancel completely in mono.
-- **Assist** (25%): a tuned resonator under the Huggins cue so the ear locks on; in Malodics mode the note level.
+- **Assist** (25%): a tuned resonator under the Huggins cue so the ear locks on; in Ghost mode the note level.
   **Purity** (70%): removes noise after the notes are made: keeps only the note and its harmonics in the resonator
   and narrows the carrier to the note. **Carrier** (35%): identical sound in both ears around each note for the cue
   to ride on; follows velocity. **Carrier fills gaps only** (on): noise is added only where the track itself has
@@ -127,7 +127,7 @@ master); group buses and the master are left out automatically.
 | Fuse | Over-aligns a wider band (to 4 kHz): thick, glued |
 | Erase | Cancels tracks exactly where they overlap |
 | Ghost | Outputs only the interaction between tracks (use Mix) |
-| Phantom | Hollows the mid and swings the sides 90°: headphone-wide, mono-safe |
+| Malodics | Hollows the mid and swings the sides 90°: headphone-wide, mono-safe |
 | Unmask | Aligns above 150 Hz only: clarity, low end untouched |
 | Envelop | Rotates the sides below 300 Hz: wide low end, mono-safe |
 | Curve | Aligned, then bent into a slow phase wave across octaves |

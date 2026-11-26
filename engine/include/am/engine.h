@@ -282,7 +282,7 @@ inline std::vector<std::vector<float>> solve(const CrossSpectra& cs, int anchor,
 enum class Flavour { Fuse, Erase, Ghost, Phantom, Unmask, Envelop, Curve, Disperse };
 
 inline Flavour flavourFromString(const std::string& s) {
-    static const char* names[] = {"FUSE", "ERASE", "GHOST", "PHANTOM", "UNMASK", "ENVELOP", "CURVE", "DISPERSE"};
+    static const char* names[] = {"FUSE", "ERASE", "GHOST", "MALODICS", "UNMASK", "ENVELOP", "CURVE", "DISPERSE"};
     for (int i = 0; i < 8; ++i) if (s == names[i]) return (Flavour)i;
     return Flavour::Fuse;
 }

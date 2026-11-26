@@ -1,11 +1,11 @@
-// Phantom notes: MIDI-played pitches made of stereo phase (Refine flavour > PHANTOM).
+// Malodic notes: MIDI-played pitches made of stereo phase (Refine flavour > MALODICS).
 //
 // Huggins mode (default): around each note and its harmonics, the track's left/right difference is removed (the
 // band is made identical in both ears), a quiet identical carrier is added there, and the left ear's phase is
 // swept through a full turn across a narrow band. Over headphones the brain hears a pitch at that frequency (the
 // Huggins / dichotic pitch). An Assist resonator, tuned to the note and fed by the music, is added to the side
 // only (mono-safe) to help the ear lock on; 25% was the clearest in listening tests on a full mix.
-// Malodics mode: only the resonator (clear notes, mono-safe).
+// Ghost mode: only the resonator (clear notes, mono-safe).
 //
 // Real time, sample accurate, framework-free. The caller schedules MIDI at absolute output-sample times (the
 // plugin adds its latency so notes land on the host grid after delay compensation).
@@ -20,8 +20,8 @@
 namespace am {
 
 struct PhantomParams {
-    bool huggins = true;       // false = Malodics (resonator only)
-    float assist = 0.25f;      // resonator level (0..1); in Malodics mode the note level
+    bool huggins = true;       // false = Ghost (resonator only)
+    float assist = 0.25f;      // resonator level (0..1); in Ghost mode the note level
     float purity = 0.7f;       // 0..1: how much of the resonator's noise is removed, keeping only the note and its harmonics
     float carrier = 0.35f;     // identical noise/source around the notes (0..1), relative to the track
     bool fillGaps = true;      // add carrier only where the track itself has little sound around the note

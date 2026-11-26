@@ -60,7 +60,7 @@
   const PF = k => { for (const list of [...PRO.map(sec => sec.fields || []), ...Object.values(REFINE)]) for (const f of list) if (f.k === k) return f; return null; };
   for (const k of ['famt', 'pmono', 'srot']) PF(k).on = v => send(k, v);
   for (const k of ['loHz', 'hiHz', 'smooth', 'stiff', 'guard']) PF(k).on = v => send(k, v);
-  // Phantom notes (Refine flavour > PHANTOM)
+  // Malodic notes (Refine flavour > MALODICS)
   for (const k of ['ppmode', 'ppassist', 'pppurity', 'ppcarrier', 'ppstrength', 'ppfold', 'ppfill', 'pppartials', 'ppattack', 'pprelease', 'ppglide', 'ppbend'])
     PF(k).on = v => send(k, v);
   let ppSourceIds = [];                                   // select index >= 2 -> session track id
@@ -125,7 +125,7 @@
       if (rg && !fresh('latMs') && document.activeElement !== rg) { rg.value = lm.v; rg.dispatchEvent(new Event('input')); }
       if (s.msg && s.msg !== lastMsg) { lastMsg = s.msg; toast(s.msgOk ? 'ok' : 'warn', s.msg); }
 
-      // Phantom notes
+      // Malodic notes
       if (s.phantom) {
         const p = s.phantom;
         showField('ppmode', p.mode); showField('ppassist', p.assist); showField('pppurity', p.purity); showField('ppcarrier', p.carrier);

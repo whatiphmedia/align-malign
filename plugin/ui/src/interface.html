@@ -231,7 +231,7 @@ input.ed-in:focus-visible,input.ed-in:focus{outline:0}
       <button aria-pressed="true" data-flv="FUSE" data-tip="merge tracks">Fuse</button>
       <button aria-pressed="false" data-flv="ERASE" data-tip="cancel overlaps">Erase</button>
       <button aria-pressed="false" data-flv="GHOST" data-tip="smeared echoes">Ghost</button>
-      <button aria-pressed="false" data-flv="PHANTOM" data-tip="headphone pitch">Phantom</button>
+      <button aria-pressed="false" data-flv="MALODICS" data-tip="headphone pitch">Malodics</button>
       <button aria-pressed="false" data-flv="UNMASK" data-tip="headphone clarity">Unmask</button>
       <button aria-pressed="false" data-flv="ENVELOP" data-tip="wide low end">Envelop</button>
       <button aria-pressed="false" data-flv="CURVE" data-tip="bend the phase">Curve</button>
@@ -271,7 +271,7 @@ let MONO_=null;const MONO=()=>MONO_||(MONO_=getComputedStyle(document.body).getP
 
 /* ================= state ================= */
 const P={match:1,width:0.5,motion:0.35,mix:1,flavor:'FUSE',ab:false,delta:false,pro:false,flash:null};
-const FLV=['FUSE','ERASE','GHOST','PHANTOM','UNMASK','ENVELOP','CURVE','DISPERSE'],FL={};FLV.forEach(k=>FL[k]=k==='FUSE'?1:0);
+const FLV=['FUSE','ERASE','GHOST','MALODICS','UNMASK','ENVELOP','CURVE','DISPERSE'],FL={};FLV.forEach(k=>FL[k]=k==='FUSE'?1:0);
 let MT=0,ABk=0,DLk=0,NT=0,LT=0,SLP=0;   // NT night (MIX down), LT house lights (MIX ~0), SLP the user asleep (MIX ~0 on malign)
 const motF=()=>P.motion<0.35?lerp(0.12,1,P.motion/0.35):lerp(1,2.8,(P.motion-0.35)/0.65);
 const widF=()=>P.width<0.5?lerp(0.22,1,P.width*2):lerp(1,1.75,(P.width-0.5)*2);
@@ -546,7 +546,7 @@ function rbGeom(){RB.scr.length=0;RB.C.length=0;RB.scr2=RB.scr2||[];RB.W=RB.W||[
     const pa=CP[Math.max(0,j-1)]||p0,pb=CP[Math.min(NK,j+1)]||p0;let tx=pb[0]-pa[0],ty=pb[1]-pa[1];const tl=Math.hypot(tx,ty)||1;tx/=tl;ty/=tl;
     let nx=ty,ny=-tx;if(nx*pnx+ny*pny<0){nx=-nx;ny=-ny;}pnx=nx;pny=ny;
     const W=(s<0.7?lerp(230,125,s/0.7):4+121*Math.pow(1-(s-0.7)/0.3,1.6))*RB.wsc*clamp(p0[3],0.25,3);RB.W[j]=W;   // wide arc, then a steep taper into the treeline
-    for(let e=0;e<=7;e++){const o=(0.5-RB.cum[e])*W;row.push([p0[0]+nx*o,p0[1]+ny*o,p0[2]]);if(FL.PHANTOM>0.01){const o2=-(0.5+0.3+e/7*0.7)*W;row2.push([p0[0]+nx*o2,p0[1]+ny*o2]);}}
+    for(let e=0;e<=7;e++){const o=(0.5-RB.cum[e])*W;row.push([p0[0]+nx*o,p0[1]+ny*o,p0[2]]);if(FL.MALODICS>0.01){const o2=-(0.5+0.3+e/7*0.7)*W;row2.push([p0[0]+nx*o2,p0[1]+ny*o2]);}}
     RB.scr.push(row);RB.scr2[j]=row2;}}
 const rbStolen=()=>sm(0.6,0.84,S.m)*(1-SLP);
 function rbColor(j,b,t){const m=S.m,a=S.a,s=RB.S[j],hs=sm(0.4,0.58,m),lv=AU.level;
@@ -561,7 +561,7 @@ function galaxyOver(g,t){if(NT<=0.02)return;if(!C.galaxy){const G=pal(['#07031a'
   const ox=-((t*3)%PW);g.save();g.globalCompositeOperation='source-atop';g.globalAlpha=Math.min(0.88,NT);g.drawImage(C.galaxy,Math.round(ox),0);g.restore();}
 function drawRainbowChunk(j0,j1,t,g=wctx){drawRainbowChunk1(j0,j1,t,g);}
 function drawRainbowChunk1(j0,j1,t,g){if(C.tlClip){g.save();g.clip(C.tlClip);try{drawRainbowChunk0(j0,j1,t,g);}finally{g.restore();}return;}drawRainbowChunk0(j0,j1,t,g);}
-function drawRainbowChunk0(j0,j1,t,g){const q=rbStolen(),cut=1-q*1.05,dp=FL.DISPERSE,ph=FL.PHANTOM;
+function drawRainbowChunk0(j0,j1,t,g){const q=rbStolen(),cut=1-q*1.05,dp=FL.DISPERSE,ph=FL.MALODICS;
   for(let j=j0;j<j1;j++){if(RB.S[j]>cut)break;
     for(let b=0;b<7;b++){const lag=Math.round(b*dp*1.6),ja=j-lag;if(ja<0)continue;const A=RB.scr[ja],B=RB.scr[ja+1];if(!A||!B||!A[b]||!B[b]||!A[b+1]||!B[b+1])continue;
       const sh=dp*0.22,f=(P1,P2,k)=>[lerp(P1[0],P2[0],k)/3,lerp(P1[1],P2[1],k)/3];
@@ -967,7 +967,7 @@ function drawHouse(t){const m=S.m,p=proj(HOUSE.X,0,HOUSE.Z);if(!p)return;const p
       for(let i=0;i<n;i++){const ch=CHUNKS[i];wctx.fillRect(Math.round(x0+ch.sx*ppx),Math.round(y0+ch.sy*ppx),Math.max(1,Math.round(ch.sw*ppx)),1);wctx.fillRect(Math.round(x0+ch.sx*ppx),Math.round(y0+ch.sy*ppx),1,Math.max(1,Math.round(ch.sh*ppx)));}}}
   else for(const b of CH_B)if(b.st==='home')bodyDraw(b,t);}
 let CH_B=[];
-// GHOST / PHANTOM: a 50% copy mirrored left-right and front-back in the bunny's zone
+// GHOST / MALODICS: a 50% copy mirrored left-right and front-back in the bunny's zone
 function drawBunnyGhost(t,gp){const u=pickU();if(u>=0.3)return;const p=proj(-BUN.X,BUN.Y,zI(3.53-BUN.Z));if(!p)return;const s=0.5*p[2]/48,w=18*s,h=16*s,x=p[0]/3,y=p[1]/3-h/2;
   wctx.save();wctx.globalAlpha=0.5*gp;wctx.translate(Math.round(x),Math.round(y));if(BUN.dir>0)wctx.scale(-1,1);wctx.drawImage(u>0?SP.bun.sit2:bunnyFrame(t),-w/2,-h/2,w,h);wctx.restore();}
 function drawBunnyWorld(t){const u=pickU();if(u>=0.3)return;const p=proj(BUN.X,BUN.Y,zI(BUN.Z));if(!p)return;const s=0.5*p[2]/48,w=18*s,h=16*s,x=p[0]/3,y=p[1]/3-h/2;
@@ -998,7 +998,7 @@ function drawWorld(t){const m=S.m,g=wctx;g.setTransform(1,0,0,1,0,0);g.globalAlp
   const gp=sm(0.3,0.66,m)*P.mix,yF=lerp(HZ+1,BH+40,gp),ZF=gp>0?CAM.f*CAM.h/Math.max(0.5,yF-HZ):1e9;
   for(const B of GBANDS)DL.push([B.rows[0].Z-0.001,()=>drawGrassBand(B,ZF)]);
   DL.push([zI(BUN.Z),()=>drawBunnyWorld(t)]);
-  {const gp=Math.max(FL.GHOST,FL.PHANTOM);if(gp>0.02)DL.push([zI(3.53-BUN.Z),()=>drawBunnyGhost(t,gp)]);}
+  {const gp=Math.max(FL.GHOST,FL.MALODICS);if(gp>0.02)DL.push([zI(3.53-BUN.Z),()=>drawBunnyGhost(t,gp)]);}
   DL.sort((a,b)=>b[0]-a[0]);F0=performance.now();for(const d of DL)d[1]();pr('painter',F0);
   // grade + dust motes
   const warm=(1-sm(0.35,0.7,m))*(1+0.4*S.a),cold=sm(0.2,0.6,m);g.globalCompositeOperation='source-atop';
@@ -1110,11 +1110,11 @@ function drawDesktop(t){const m=S.m;sceneT();ctx=vctx;ctx.imageSmoothingEnabled=
 function drawCarried(pk,t){const fr=SP.bun.dangle[((t*8)|0)%2],s=Math.max(1,pk.k*0.5/48)*3*pk.sc;ctx.drawImage(fr,pk.bun[0]-9*s,pk.bun[1]-8*s,18*s,16*s);}
 const CTL={match:['MATCH','rainbow band balance (1:1 bass)'],width:['WIDTH','pines + bushes spread (stereo)'],motion:['MOTION','wind · drift · spin'],mix:['MIX','day ↔ night (0% = lights on, the user sleeps)'],
   ab:['A/B','B = dusk grade'],delta:['DELTA','only what changed stays lit'],pro:['PRO','value tags'],
-  FUSE:['FUSE','elements merge'],ERASE:['ERASE','elements deleted'],GHOST:['GHOST','echo trails'],PHANTOM:['PHANTOM','phantom double rainbow'],UNMASK:['UNMASK','haze + blur lifted'],
+  FUSE:['FUSE','elements merge'],ERASE:['ERASE','elements deleted'],GHOST:['GHOST','echo trails'],MALODICS:['MALODICS','phantom double rainbow'],UNMASK:['UNMASK','haze + blur lifted'],
   ENVELOP:['ENVELOP','aurora wraps the sky'],CURVE:['CURVE','world bends into a planet'],DISPERSE:['DISPERSE','bands delayed per colour']};
 function anchorFor(k){const pine=BODIES.find(b=>b.kind==='pine'&&b.i===1),bird=BODIES.find(b=>b.kind==='bird'&&b.i===0),rb=RB.scr[9]&&RB.scr[9][2],rb2=RB.scr2&&RB.scr2[9]&&RB.scr2[9][3];
   const pp=b=>{const q=b&&proj(b.X,b.Y,b.Z);return q?[q[0],q[1]]:[480,300];};
-  switch(k){case 'match':case 'DISPERSE':return rb?[rb[0],rb[1]]:[400,120];case 'PHANTOM':return rb2?[rb2[0],rb2[1]]:[400,60];case 'width':return pp(pine);case 'motion':return [300,470];case 'mix':return [560,490];
+  switch(k){case 'match':case 'DISPERSE':return rb?[rb[0],rb[1]]:[400,120];case 'MALODICS':return rb2?[rb2[0],rb2[1]]:[400,60];case 'width':return pp(pine);case 'motion':return [300,470];case 'mix':return [560,490];
     case 'FUSE':return pp(bird);case 'ERASE':{const e=eraseTarget(),id=e.id,b=id[0]==='p'?BODIES.find(x=>x.kind==='pine'&&x.i===+id.slice(1)):id[0]==='b'?BODIES.find(x=>x.kind==='bush'&&x.i===+id.slice(1)):id[0]==='w'?BODIES.find(x=>x.kind==='bird'&&x.i===+id.slice(1)):null;
       if(b)return pp(b);const cl=CLOUDS[+id.slice(1)];return cl&&cl.sp?[cl.sp[0],cl.sp[1]]:[480,150];}
     case 'GHOST':{const q=proj(BUN.X,0.2,zI(BUN.Z));return q&&pickU()===0?[q[0],q[1]]:[480,400];}case 'UNMASK':return [700,290];case 'ENVELOP':return [480,90];case 'CURVE':return [880,330];default:return [480,70];}}
@@ -1304,7 +1304,7 @@ function buildGroups(tb,rows,pick){
 }
 
 // Refine flavour (Pro page): contextual to the selected flavour. Every flavour has Amount / Movement / Mix;
-// PHANTOM adds Phantom notes. Other flavours get their own refinements here later.
+// MALODICS adds Malodic notes. Other flavours get their own refinements here later.
 const fmtMs=v=>v<1000?`${Math.round(v)} ms`:`${(v/1000).toFixed(2)} s`;
 const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'],noteName=n=>NOTE_NAMES[n%12]+(Math.floor(n/12)-1);
 const REFINE={
@@ -1312,10 +1312,10 @@ const REFINE={
    {t:'range',k:'famt',name:'Amount',min:0,max:1,step:0.01,v:1,fmt:pct,hint:'How deep the malign flavours go at a given knob position.'},
    {t:'range',k:'frate',name:'Movement',min:0,max:1,step:0.01,v:0,fmt:pct,link:'motion'},
    {t:'range',k:'fmix',name:'Mix',min:0,max:1,step:0.01,v:1,fmt:pct,link:'mix',hint:'Low mix turns the scene to night.'}],
-  PHANTOM:[
-   {t:'info',k:'ppnotes',name:'Phantom notes',v:'Play MIDI into this track. Live: on a MIDI track set MIDI To > this track > Auto Malign. Best on headphones.'},
-   {t:'select',k:'ppmode',name:'Mode',opts:['Huggins (headphones)','Malodics (mono-safe)'],v:0,hint:'Huggins makes the note out of the difference between your ears. Malodics plays tuned resonators into the stereo side.'},
-   {t:'range',k:'ppassist',name:'Assist',min:0,max:1,step:0.01,v:0.25,fmt:pct,hint:'A tuned resonator under the phase cue helps the ear lock on (25% was clearest on a full mix). In Malodics mode this is the note level.'},
+  MALODICS:[
+   {t:'info',k:'ppnotes',name:'Malodic notes',v:'Play MIDI into this track. Live: on a MIDI track set MIDI To > this track > Auto Malign. Best on headphones.'},
+   {t:'select',k:'ppmode',name:'Mode',opts:['Huggins (headphones)','Ghost (mono-safe)'],v:0,hint:'Huggins makes the note out of the difference between your ears. Ghost plays tuned resonators into the stereo side.'},
+   {t:'range',k:'ppassist',name:'Assist',min:0,max:1,step:0.01,v:0.25,fmt:pct,hint:'A tuned resonator under the phase cue helps the ear lock on (25% was clearest on a full mix). In Ghost mode this is the note level.'},
    {t:'range',k:'pppurity',name:'Purity',min:0,max:1,step:0.01,v:0.7,fmt:pct,hint:'Removes noise: keeps only the note and its harmonics in the resonator, and narrows the carrier to the note. Higher is cleaner and more tonal.'},
    {t:'range',k:'ppcarrier',name:'Carrier',min:0,max:1,step:0.01,v:0.35,fmt:pct,hint:'Identical sound in both ears around each note, for the cue to ride on (this is meant to be noise unless you choose a source). Follows velocity.'},
    {t:'range',k:'ppstrength',name:'Strength',min:0,max:1,step:0.01,v:0.5,fmt:pct,hint:'Width of the phase sweep and of the mono zone around each note.'},
@@ -1327,8 +1327,8 @@ const REFINE={
    {t:'range',k:'ppglide',name:'Glide',min:0,max:1000,step:1,v:0,fmt:v=>v?fmtMs(v):'Off'},
    {t:'range',k:'ppbend',name:'Pitch bend range',min:0,max:24,step:1,v:2,fmt:v=>`±${v} st`},
    {t:'select',k:'ppsource',name:'Source',opts:['This track + noise','Sidechain input'],v:0,hint:'What feeds the carrier and the resonators: this track (with noise as carrier), the sidechain input, or any other track with Auto Malign on it.'}]};
-function refineFields(fl){return fl==='PHANTOM'?[...REFINE.PHANTOM,...REFINE.common]:REFINE.common;}
-function refineLead(fl){return fl==='PHANTOM'?'Phantom notes: play pitches made of stereo phase with MIDI. Amount, movement and mix for PHANTOM are below.'
+function refineFields(fl){return fl==='MALODICS'?[...REFINE.MALODICS,...REFINE.common]:REFINE.common;}
+function refineLead(fl){return fl==='MALODICS'?'Malodic notes: play pitches made of stereo phase with MIDI. Amount, movement and mix for MALODICS are below.'
   :`${fl}: amount, movement and mix. More refinements for this flavour are planned.`;}
 // Hover tooltips for every [data-tip] (keyboard focus too)
 {const tip=document.createElement('div');tip.id='tip';tip.setAttribute('role','tooltip');document.body.appendChild(tip);let timer=0,cur=null;

@@ -95,7 +95,7 @@ private:
     juce::AudioParameterChoice* pFlavour_;
     juce::AudioParameterBool *pAB_, *pDelta_, *pLatAuto_;
     juce::AudioParameterFloat *pLatMs_, *pLinkId_, *pFAmt_ = nullptr, *pPMono_ = nullptr, *pSRot_ = nullptr;
-    // Phantom notes (Refine flavour > PHANTOM)
+    // Malodic notes (Refine flavour > MALODICS)
     am::PhantomNotes phantom_;
     std::atomic<bool> phantomOn_{ false };
     int lastFlavourIdx_ = -1;

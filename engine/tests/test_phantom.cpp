@@ -1,4 +1,4 @@
-// Phantom notes (Refine flavour > PHANTOM): the Huggins cue lands on the note, Malodics mode is mono-safe, nothing
+// Malodic notes (Refine flavour > MALODICS): the Huggins cue lands on the note, Ghost mode is mono-safe, nothing
 // changes without notes, MIDI lands exactly when scheduled, no clicks, stays bounded.
 #include "am/phantom.h"
 #include "am/fft.h"
@@ -48,12 +48,12 @@ int main() {
         check(std::abs(std::abs(at) - 180) < 30, "Huggins: the ears differ by about half a turn at the note");
         check(std::abs(above) < 10, "Huggins: nothing changes far above the note and its harmonics");
     }
-    {   // 3. Malodics: the mono sum is untouched
+    {   // 3. Ghost: the mono sum is untouched
         PhantomParams p; p.huggins = false; p.assist = 1.f;
         auto [L, R] = render(mL, mR, p, [&](PhantomNotes& pn) { pn.noteOn(note, 1.f, 1000); pn.noteOn(note + 4, 0.8f, 1000); pn.noteOff(note, (int64_t)(1.5 * sr)); });
         double md = 0, side = 0; for (int i = 0; i < N; ++i) { md = std::max(md, (double)std::abs((L[i] + R[i]) - (mL[i] + mR[i]))); side += std::pow((L[i] - R[i]) - (mL[i] - mR[i]), 2); }
-        std::printf("    Malodics: mono sum change %.2e, added side rms %.4f\n", md, std::sqrt(side / N));
-        check(md < 1e-6 && side > 0, "Malodics: notes are added to the stereo side only; the mono sum is unchanged");
+        std::printf("    Ghost: mono sum change %.2e, added side rms %.4f\n", md, std::sqrt(side / N));
+        check(md < 1e-6 && side > 0, "Ghost: notes are added to the stereo side only; the mono sum is unchanged");
     }
     {   // 4. timing: nothing before the scheduled sample, something right after
         PhantomParams p; p.attackMs = 1.f;
