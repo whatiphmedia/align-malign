@@ -2,6 +2,8 @@
 #include <JuceHeader.h>
 #include "am/session.h"
 #include "am/convolver.h"
+#include "am/phantom.h"
+#include "am/audioshare.h"
 #include <array>
 #include <map>
 
@@ -93,6 +95,24 @@ private:
     juce::AudioParameterChoice* pFlavour_;
     juce::AudioParameterBool *pAB_, *pDelta_, *pLatAuto_;
     juce::AudioParameterFloat *pLatMs_, *pLinkId_, *pFAmt_ = nullptr, *pPMono_ = nullptr, *pSRot_ = nullptr;
+    // Phantom notes (Refine flavour > PHANTOM)
+    am::PhantomNotes phantom_;
+    std::atomic<bool> phantomOn_{ false };
+    int lastFlavourIdx_ = -1;
+    juce::AudioParameterChoice *pPpMode_ = nullptr, *pPpSource_ = nullptr;
+    juce::AudioParameterFloat *pPpAssist_ = nullptr, *pPpCarrier_ = nullptr, *pPpStrength_ = nullptr, *pPpAttack_ = nullptr,
+                              *pPpRelease_ = nullptr, *pPpGlide_ = nullptr, *pPpBend_ = nullptr;
+    juce::AudioParameterBool* pPpFold_ = nullptr;
+    juce::AudioParameterInt* pPpPartials_ = nullptr;
+    std::shared_ptr<am::SharedRing> ownRing_;          // this track's input, for other tracks' Phantom notes
+    std::shared_ptr<am::SharedRing> srcRing_, srcRingPrev_;   // the chosen source track (kept alive one extra tick)
+    std::atomic<am::SharedRing*> srcRingRaw_{ nullptr };
+    std::atomic<int> ppSourceId_{ -1 };                 // slot id of the session track used as the source
+    juce::AudioBuffer<float> srcBuf_, scDelayed_;
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::None> scDelay_{ am::kIRLen * 2 };
+    std::array<std::atomic<int>, 8> ppSounding_{};      // notes sounding, for the interface (-1 = none)
+    void updatePhantomParams();
+    juce::String pendingSourceName_;                   // restored source track, matched by name once it appears
     int linkId_ = 0;                                   // identifies this instance to the Live control surface
     juce::String latSource_ = "none", latTrack_, msg_; // shown on the Pro page
     double latUsedMs_ = 0;

@@ -139,6 +139,23 @@ juce::AudioProcessorValueTreeState::ParameterLayout AlignMalignProcessor::create
                                                 AudioParameterFloatAttributes().withLabel("Hz")));
     l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "srot", 1 }, "Side rotation", NormalisableRange<float>(-180.f, 180.f, 1.f), 0.f,
                                                 AudioParameterFloatAttributes().withLabel("deg")));
+    // Phantom notes (Refine flavour > PHANTOM): MIDI-played pitches made of stereo phase
+    l.add(std::make_unique<AudioParameterChoice>(ParameterID{ "ppmode", 1 }, "Phantom mode", StringArray{ "Huggins", "Ghost" }, 0));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppassist", 1 }, "Phantom assist", NormalisableRange<float>(0.f, 1.f), 0.25f));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppcarrier", 1 }, "Phantom carrier", NormalisableRange<float>(0.f, 1.f), 0.35f));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppstrength", 1 }, "Phantom strength", NormalisableRange<float>(0.f, 1.f), 0.5f));
+    l.add(std::make_unique<AudioParameterBool>(ParameterID{ "ppfold", 1 }, "Phantom sweet-spot folding", true));
+    l.add(std::make_unique<AudioParameterInt>(ParameterID{ "pppartials", 1 }, "Phantom harmonics", 1, 6, 6));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppattack", 1 }, "Phantom attack", NormalisableRange<float>(1.f, 500.f, 0.f, 0.4f), 15.f,
+                                                AudioParameterFloatAttributes().withLabel("ms")));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "pprelease", 1 }, "Phantom release", NormalisableRange<float>(5.f, 3000.f, 0.f, 0.4f), 250.f,
+                                                AudioParameterFloatAttributes().withLabel("ms")));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppglide", 1 }, "Phantom glide", NormalisableRange<float>(0.f, 1000.f, 0.f, 0.4f), 0.f,
+                                                AudioParameterFloatAttributes().withLabel("ms")));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppbend", 1 }, "Phantom bend range", NormalisableRange<float>(0.f, 24.f, 1.f), 2.f,
+                                                AudioParameterFloatAttributes().withLabel("st")));
+    l.add(std::make_unique<AudioParameterChoice>(ParameterID{ "ppsource", 1 }, "Phantom source",
+                                                 StringArray{ "This track + noise", "Sidechain input", "Session track" }, 0));
     // Latency in front of this instance (synths/plugins before it on the track): read from Live, or typed in.
     l.add(std::make_unique<AudioParameterBool>(ParameterID{ "latauto", 1 }, "Latency before: from Live", true));
     l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "latms", 1 }, "Latency before (manual)",
@@ -152,7 +169,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout AlignMalignProcessor::create
 AlignMalignProcessor::AlignMalignProcessor()
     : AudioProcessor(BusesProperties()
                          .withInput("Input", juce::AudioChannelSet::stereo(), true)
-                         .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
+                         .withOutput("Output", juce::AudioChannelSet::stereo(), true)
+                         .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),   // Phantom notes source
       apvts(*this, nullptr, "AlignMalign", createLayout()) {
     pAlign_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("alignment"));
     pMatch_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("match"));
@@ -166,6 +184,19 @@ AlignMalignProcessor::AlignMalignProcessor()
     pPMono_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("pmono"));
     pSRot_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("srot"));
     jassert(pFAmt_ && pPMono_ && pSRot_);
+    pPpMode_ = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("ppmode"));
+    pPpSource_ = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("ppsource"));
+    pPpAssist_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("ppassist"));
+    pPpCarrier_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("ppcarrier"));
+    pPpStrength_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("ppstrength"));
+    pPpAttack_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("ppattack"));
+    pPpRelease_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("pprelease"));
+    pPpGlide_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("ppglide"));
+    pPpBend_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("ppbend"));
+    pPpFold_ = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("ppfold"));
+    pPpPartials_ = dynamic_cast<juce::AudioParameterInt*>(apvts.getParameter("pppartials"));
+    jassert(pPpMode_ && pPpSource_ && pPpAssist_ && pPpCarrier_ && pPpStrength_ && pPpAttack_ && pPpRelease_ && pPpGlide_ && pPpBend_ && pPpFold_ && pPpPartials_);
+    for (auto& n : ppSounding_) n.store(-1);
     pLatAuto_ = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("latauto"));
     pLatMs_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("latms"));
     pLinkId_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("linkid"));
@@ -180,6 +211,7 @@ AlignMalignProcessor::AlignMalignProcessor()
         (*c)->setKernel((*c)->makeKernel(delta));
     }
     slot_ = am::SessionBus::get().join(0.0);
+    ownRing_ = am::AudioShare::get().publish(slot_->id());
     slot_->onIR = [this](std::shared_ptr<const am::IRSet> s) { loadIRs(std::move(s)); };
     setLatencySamples(latency());
     startTimerHz(30);
@@ -188,12 +220,17 @@ AlignMalignProcessor::AlignMalignProcessor()
 AlignMalignProcessor::~AlignMalignProcessor() {
     stopTimer();
     LiveLink::get().release();
+    am::AudioShare::get().withdraw(slot_->id());
     am::SessionBus::get().leave(slot_); // clears onIR under the bus lock, so no callback can arrive after this
 }
 
 bool AlignMalignProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
     const auto in = layouts.getMainInputChannelSet(), out = layouts.getMainOutputChannelSet();
     if (in != out) return false;
+    if (layouts.inputBuses.size() > 1) {                 // the optional sidechain: off, mono or stereo
+        const auto sc = layouts.getChannelSet(true, 1);
+        if (!sc.isDisabled() && sc != juce::AudioChannelSet::mono() && sc != juce::AudioChannelSet::stereo()) return false;
+    }
     return out == juce::AudioChannelSet::mono() || out == juce::AudioChannelSet::stereo();
 }
 
@@ -209,6 +246,14 @@ void AlignMalignProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     dryDelay_.reset();
     for (auto* b : { &mid_, &side_, &midM_, &sideM_, &dryM_, &dryS_ }) b->setSize(1, maxBlock, false, true, false);
     monoScratch_.assign((size_t)maxBlock, 0.f);
+    srcBuf_.setSize(2, maxBlock, false, true, false);
+    scDelayed_.setSize(2, maxBlock, false, true, false);
+    scDelay_.prepare({ sampleRate, (juce::uint32)maxBlock, 2 });
+    scDelay_.setMaximumDelayInSamples(am::kIRLen * 2);
+    scDelay_.setDelay((float)latency());
+    scDelay_.reset();
+    phantom_.prepare(sampleRate);
+    updatePhantomParams();
     setLatencySamples(latency());
     am::SessionBus::get().setSampleRate(sampleRate);
     am::SessionBus::get().controlsChanged(); // rebuild IRs for this sample rate (sent only if they changed)
@@ -227,9 +272,9 @@ void AlignMalignProcessor::loadIRs(std::shared_ptr<const am::IRSet> set) {
     load(*convSideM_, set->sideMirror.empty() ? set->side : set->sideMirror);
 }
 
-void AlignMalignProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) {
+void AlignMalignProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) {
     juce::ScopedNoDenormals noDenormals;
-    const int total = buffer.getNumSamples(), nch = buffer.getNumChannels();
+    const int total = buffer.getNumSamples(), nch = juce::jmin(buffer.getNumChannels(), getMainBusNumOutputChannels());
     if (!prepared_ || nch == 0 || total == 0) return;
 
     int64_t pos = -1;
@@ -254,6 +299,26 @@ void AlignMalignProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     const int maxBlock = mid_.getNumSamples();
     float inPeak = 0.f, outSq = 0.f, outPeak = 0.f;
 
+    // Phantom notes: MIDI is scheduled one plugin latency later, so after the host's delay compensation each note
+    // lands exactly where it sits on the timeline.
+    const bool ppOn = pFlavour_->getIndex() == 3;          // PHANTOM
+    if (ppOn != phantomOn_.load(std::memory_order_relaxed)) { if (!ppOn) phantom_.allOff(); phantomOn_.store(ppOn); }
+    const int64_t clock0 = phantom_.clock();
+    for (const auto meta : midi) {
+        if (!ppOn) break;
+        const auto& mm = meta.getMessage();
+        const int64_t at = clock0 + meta.samplePosition + latency();
+        if (mm.isNoteOn()) phantom_.noteOn(mm.getNoteNumber(), mm.getFloatVelocity(), at);
+        else if (mm.isNoteOff()) phantom_.noteOff(mm.getNoteNumber(), at);
+        else if (mm.isPitchWheel()) phantom_.pitchBend((mm.getPitchWheelValue() - 8192) / 8192.f, at);
+        else if (mm.isSustainPedalOn()) phantom_.sustainPedal(true, at);
+        else if (mm.isSustainPedalOff()) phantom_.sustainPedal(false, at);
+        else if (mm.isAllNotesOff() || mm.isAllSoundOff()) phantom_.allOff();
+    }
+    const int ppSource = pPpSource_->getIndex();
+    auto scBus = getBusCount(true) > 1 ? getBusBuffer(buffer, true, 1) : juce::AudioBuffer<float>();
+    const bool scOn = getBusCount(true) > 1 && getBus(true, 1)->isEnabled() && scBus.getNumChannels() > 0;
+
     for (int off = 0; off < total; off += maxBlock) {
         const int n = juce::jmin(maxBlock, total - off);
         float* L = buffer.getWritePointer(0, off);
@@ -268,6 +333,23 @@ void AlignMalignProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         }
 
         slot_->write(m, n, pos >= 0 ? pos + off : -1, playing, learning);
+        if (playing && pos >= 0) ownRing_->write(L, R, n, pos + off);   // for other tracks' Phantom notes
+
+        // Phantom notes source, aligned to this chunk's output (= input one latency ago)
+        const float *srcL = nullptr, *srcR = nullptr;
+        if (scOn) {                                          // the sidechain is always delayed, so switching is seamless
+            const float* a = scBus.getReadPointer(0, off);
+            const float* b = scBus.getReadPointer(juce::jmin(1, scBus.getNumChannels() - 1), off);
+            float* da = scDelayed_.getWritePointer(0);
+            float* db = scDelayed_.getWritePointer(1);
+            for (int i = 0; i < n; ++i) { scDelay_.pushSample(0, a[i]); da[i] = scDelay_.popSample(0); scDelay_.pushSample(1, b[i]); db[i] = scDelay_.popSample(1); }
+            if (ppSource == 1) { srcL = da; srcR = db; }
+        }
+        if (ppSource == 2 && playing && pos >= 0)
+            if (auto* ring = srcRingRaw_.load(std::memory_order_acquire))
+                if (ring->read(pos + off - latency(), n, srcBuf_.getWritePointer(0), srcBuf_.getWritePointer(1))) {
+                    srcL = srcBuf_.getReadPointer(0); srcR = srcBuf_.getReadPointer(1);
+                }
 
         // dry path, delayed to line up with the FIR output
         float* dm = dryM_.getWritePointer(0);
@@ -314,6 +396,10 @@ void AlignMalignProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
             scopeRing_[(size_t)w] = om;
             scopeWrite_.store((w + 1) % kScope, std::memory_order_relaxed);
         }
+        // Phantom notes on the final output (keeps its clock running even when idle)
+        phantom_.process(L, R, srcL, srcR, n);
+        if (phantom_.busy())
+            for (int i = 0; i < n; ++i) outPeak = juce::jmax(outPeak, std::abs(L[i]), R ? std::abs(R[i]) : 0.f);
         ppq += n * ppqPerSample;
     }
     inLevel_.store(inPeak);
@@ -326,8 +412,35 @@ void AlignMalignProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
 }
 
 // ---------------------------------------------------------------- message thread
+void AlignMalignProcessor::updatePhantomParams() {
+    am::PhantomParams p;
+    p.huggins = pPpMode_->getIndex() == 0;
+    p.assist = pPpAssist_->get();
+    p.carrier = pPpCarrier_->get();
+    p.strength = pPpStrength_->get();
+    p.fold = pPpFold_->get();
+    p.partials = pPpPartials_->get();
+    p.attackMs = pPpAttack_->get();
+    p.releaseMs = pPpRelease_->get();
+    p.glideMs = pPpGlide_->get();
+    p.bendRange = pPpBend_->get();
+    phantom_.setParams(p);   // plain values, read once per sample by the audio thread (worst case: one stale sample)
+}
+
 void AlignMalignProcessor::timerCallback() {
     auto& bus = am::SessionBus::get();
+    updatePhantomParams();
+    {   // the session track used as the Phantom source (kept alive one extra tick, so the audio thread never sees it freed)
+        const int id = ppSourceId_.load();
+        auto want = id >= 0 && id != slot_->id() ? am::AudioShare::get().find(id) : nullptr;
+        if (want != srcRing_) { srcRingPrev_ = srcRing_; srcRing_ = want; srcRingRaw_.store(want.get(), std::memory_order_release); }
+        else srcRingPrev_.reset();
+        if (pendingSourceName_.isNotEmpty())               // a restored source: find it once its track has joined
+            for (auto& t : bus.tracks())
+                if (t.id != slot_->id() && juce::String(t.name) == pendingSourceName_) { ppSourceId_.store(t.id); pendingSourceName_.clear(); break; }
+        const auto notes = phantom_.sounding();
+        for (size_t i = 0; i < ppSounding_.size(); ++i) ppSounding_[i].store(i < notes.size() ? notes[i] : -1);
+    }
     // 0) publish this instance's Link ID (a duplicated track copies the old value, so it is re-asserted) and work out
     //    how late this track's audio arrives: from Live's control surface, else the manual value, else zero.
     const float wantId = (float)linkId_ / 100000.f;
@@ -417,6 +530,7 @@ void AlignMalignProcessor::setParamFromUI(const juce::String& id, const juce::va
         bus.setSettings(st);
         return;
     }
+    if (id == "ppSourceTrack") { ppSourceId_.store((int)value); return; }
     if (id == "latAuto") { pLatAuto_->setValueNotifyingHost((bool)value ? 1.f : 0.f); return; }
     if (id == "latMs") { pLatMs_->setValueNotifyingHost(pLatMs_->convertTo0to1((float)(double)value)); return; }
     auto* p = apvts.getParameter(id);
@@ -425,6 +539,9 @@ void AlignMalignProcessor::setParamFromUI(const juce::String& id, const juce::va
     if (id == "flavour") norm = p->convertTo0to1((float)juce::jmax(0, flavourNames().indexOf(value.toString())));
     else if (id == "ab" || id == "delta") norm = (bool)value ? 1.f : 0.f;
     else if (auto* pf = dynamic_cast<juce::AudioParameterFloat*>(p)) norm = pf->convertTo0to1(juce::jlimit(pf->range.start, pf->range.end, (float)(double)value));
+    else if (auto* pc = dynamic_cast<juce::AudioParameterChoice*>(p)) norm = pc->convertTo0to1((float)juce::jlimit(0, pc->choices.size() - 1, (int)value));
+    else if (auto* pi = dynamic_cast<juce::AudioParameterInt*>(p)) norm = pi->convertTo0to1((float)juce::jlimit(pi->getRange().getStart(), pi->getRange().getEnd(), (int)value));
+    else if (dynamic_cast<juce::AudioParameterBool*>(p)) norm = (bool)value ? 1.f : 0.f;
     else norm = juce::jlimit(0.f, 1.f, (float)(double)value);
     if (std::abs(p->getValue() - norm) > 1e-6f) {
         p->beginChangeGesture();
@@ -473,6 +590,26 @@ juce::var AlignMalignProcessor::makeUIState() {
     }
     o->setProperty("names", names);
     o->setProperty("tracks", tracks);
+    {   // Phantom notes
+        auto* pp = new juce::DynamicObject();
+        pp->setProperty("mode", pPpMode_->getIndex());
+        pp->setProperty("assist", pPpAssist_->get());
+        pp->setProperty("carrier", pPpCarrier_->get());
+        pp->setProperty("strength", pPpStrength_->get());
+        pp->setProperty("fold", pPpFold_->get());
+        pp->setProperty("partials", pPpPartials_->get());
+        pp->setProperty("attack", pPpAttack_->get());
+        pp->setProperty("release", pPpRelease_->get());
+        pp->setProperty("glide", pPpGlide_->get());
+        pp->setProperty("bend", pPpBend_->get());
+        pp->setProperty("source", pPpSource_->getIndex());
+        pp->setProperty("sourceTrack", ppSourceId_.load());
+        pp->setProperty("sidechain", getBusCount(true) > 1 && getBus(true, 1)->isEnabled());
+        juce::Array<juce::var> held;
+        for (auto& n : ppSounding_) if (n.load() >= 0) held.add(n.load());
+        pp->setProperty("notes", held);
+        o->setProperty("phantom", juce::var(pp));
+    }
     o->setProperty("famt", pFAmt_->get());
     o->setProperty("pmono", pPMono_->get());
     o->setProperty("srot", pSRot_->get());
@@ -519,6 +656,11 @@ void AlignMalignProcessor::getStateInformation(juce::MemoryBlock& dest) {
     state.setProperty("scope", scope_, nullptr);
     state.setProperty("track", trackName_, nullptr);
     state.setProperty("group", juce::String(am::SessionBus::get().group(slot_)), nullptr);
+    {   // the Phantom source track is remembered by name (slot ids change every time the set loads)
+        juce::String srcName;
+        for (auto& t : am::SessionBus::get().tracks()) if (t.id == ppSourceId_.load()) srcName = juce::String(t.name);
+        state.setProperty("ppSourceName", srcName, nullptr);
+    }
     {   // the session's analysis settings travel with every copy; the anchor is remembered by the copy that is it
         const auto st = am::SessionBus::get().settings();
         state.setProperty("aLo", st.loHz, nullptr);
@@ -554,6 +696,7 @@ void AlignMalignProcessor::setStateInformation(const void* data, int size) {
     trackName_ = state.getProperty("track", trackName_).toString();
     am::SessionBus::get().setName(slot_, trackName_.toStdString());
     setGroup(slot_->id(), state.getProperty("group", "").toString());
+    pendingSourceName_ = state.getProperty("ppSourceName", "").toString();
     if (state.hasProperty("aLo")) {
         auto& bus = am::SessionBus::get();
         auto st = bus.settings();

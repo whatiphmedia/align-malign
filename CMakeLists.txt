@@ -14,6 +14,11 @@ target_include_directories(am_engine INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/engin
 if(ALIGNMALIGN_BUILD_TESTS)
   add_executable(am_engine_test engine/tests/test_engine.cpp)
   target_link_libraries(am_engine_test PRIVATE am_engine)
+  add_executable(am_phantom_test engine/tests/test_phantom.cpp)
+  target_link_libraries(am_phantom_test PRIVATE am_engine)
+  if(MSVC)
+    target_compile_definitions(am_phantom_test PRIVATE _USE_MATH_DEFINES)
+  endif()
   add_executable(am_solver_test engine/tests/test_solver.cpp)
   target_link_libraries(am_solver_test PRIVATE am_engine)
   if(MSVC)
@@ -75,7 +80,7 @@ juce_add_plugin(AlignMalign
   FORMATS VST3 Standalone
   VST3_CATEGORIES Fx Tools
   IS_SYNTH FALSE
-  NEEDS_MIDI_INPUT FALSE
+  NEEDS_MIDI_INPUT TRUE                      # Phantom notes are played by MIDI
   NEEDS_MIDI_OUTPUT FALSE
   EDITOR_WANTS_KEYBOARD_FOCUS TRUE
   NEEDS_WEBVIEW2 TRUE
