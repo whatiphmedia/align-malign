@@ -1391,10 +1391,10 @@ function buildMask(fx){const {W,H,cv,host}=fx,m=document.createElement('canvas')
         const a=x<=fadeX?255:Math.round(255*(1-(x-fadeX)/(s.r-fadeX)));
         if(a>0)d32[y*W+x]=((a<<24)>>>0)|0x050505;}}
     mg.putImageData(img,0,0);return m;}
-  const PAD=host.id==='propage'?1:2,FALL=host.id==='propage'?6:8.8;   // a tight edge around controls, not a wide halo
+  const PAD=host.id==='propage'?1:3,FALL=host.id==='propage'?6:8.8;   // 3 px solid edge, then the fade starts thinning at once   // a tight edge around controls, not a wide halo
   for(let y=0;y<H;y+=2)for(let x=0;x<W;x+=2){let d=1e9;for(const s of shapes){const dd=s.c?Math.hypot(x+1-s.x,y+1-s.y)-s.r:Math.hypot(Math.max(s.l-x-1,0,x+1-s.r),Math.max(s.t-y-1,0,y+1-s.b));if(dd<d)d=dd;}
     if(!grid&&d<=0)continue; // flavour tabs keep their own translucent fill
-    let a=d<=PAD?1:1-(d-PAD)/FALL;if(a<=0)continue;a=a*a*(3-2*a);
+    let a=d<=PAD?1:1-(d-PAD)/FALL;if(a<=0)continue;if(!grid||host.id==='propage')a=a*a*(3-2*a);   // modules: linear fade, no dense shoulder
     if(a*16>BAYER[((y>>1)&3)*4+((x>>1)&3)]+0.5){for(let j=0;j<2&&y+j<H;j++)for(let i=0;i<2&&x+i<W;i++)d32[(y+j)*W+x+i]=BLK;}}
   mg.putImageData(img,0,0);return m;}
 function makeFx(host){const cv=host.querySelector('canvas.fx'),g=cv.getContext('2d'),fx={host,cv,g,kind:host.dataset.fx,hover:false,mx:-1e3,my:-1e3,px:0,py:0,t:0,intro:0,introDone:false,pings:[],flips:[],last:0,W:0,H:0,seed:FX.length*17.3};
