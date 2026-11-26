@@ -1268,7 +1268,7 @@ const pct=v=>`${Math.round(v*100)}%`;
 const main=Knob(document.getElementById('k-main'),{value:0.5,bipolar:true,size:200,hero:true,onChange:setV,fmt:()=>S.sub||'Neutral'});
 {const m2=Knob(document.getElementById('k-main2'),{value:0.5,bipolar:true,size:206,hero:true,onChange:v=>main.set(v),fmt:()=>S.sub||'Neutral'});main.sub(v=>m2.set(v,false));}
 const MAC={},ML=document.getElementById('macrolist');[['match',1],['width',0.5],['motion',0.35],['mix',1]].forEach(([id,v0])=>{const o=document.getElementById('v-'+id),cell=document.createElement('div');cell.innerHTML=`<div class="mrow"><dt>${id[0].toUpperCase()+id.slice(1)}</dt><dd></dd></div><input type="range" min="0" max="100" step="1" aria-label="${id}">`;ML.appendChild(cell);const dd=cell.querySelector('dd'),sl=cell.querySelector('input');sl.addEventListener('input',()=>MAC[id].set(sl.value/100));sl.title='Ctrl+click to reset';sl.addEventListener('pointerdown',e=>{if(e.ctrlKey||e.metaKey){e.preventDefault();MAC[id].reset();}});MAC[id]=Knob(document.getElementById('k-'+id),{value:v0,size:96,onChange:v=>{o.textContent=pct(v);dd.textContent=pct(v);sl.value=Math.round(v*100);sl.style.setProperty('--fill',`${v*100}%`);P[id]=v;S.dirty=true;if(S.t>0.2)P.flash={k:id,t:S.t,v:pct(v)};},fmt:pct});});
-document.querySelectorAll('.flavor button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.flavor button').forEach(x=>x.setAttribute('aria-pressed','false'));b.setAttribute('aria-pressed','true');P.flavor=b.dataset.flv;S.dirty=true;P.flash={k:P.flavor,t:S.t};}));
+document.querySelectorAll('.flavor button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.flavor button').forEach(x=>x.setAttribute('aria-pressed','false'));b.setAttribute('aria-pressed','true');P.flavor=b.dataset.flv;S.dirty=true;P.flash={k:P.flavor,t:S.t};PRO.rerenderIfRefine&&PRO.rerenderIfRefine();}));
 ['ab','delta'].forEach(id=>{const b=document.getElementById(id);b.addEventListener('click',()=>{const on=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',on?'true':'false');P[id]=on;P.flash={k:id,t:S.t,v:on?'ON':'OFF'};});});
 // header segments: scope and stereo processing (prototype: state + log)
 for(const gid of ['scope'])document.querySelectorAll('#'+gid+' button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('#'+gid+' button').forEach(x=>x.setAttribute('aria-pressed',x===b?'true':'false'));P[gid]=b.dataset.v;toast('ok',`${gid==='scope'?'Working on':'Stereo processing'}: ${b.textContent}`);}));
@@ -1297,7 +1297,33 @@ function buildGroups(tb,rows,pick){
     tr.append(a,b);tb.appendChild(tr);}
 }
 
+// Refine flavour (Pro page): contextual to the selected flavour. Every flavour has Amount / Movement / Mix;
+// PHANTOM adds Phantom notes. Other flavours get their own refinements here later.
+const fmtMs=v=>v<1000?`${Math.round(v)} ms`:`${(v/1000).toFixed(2)} s`;
+const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'],noteName=n=>NOTE_NAMES[n%12]+(Math.floor(n/12)-1);
+const REFINE={
+  common:[
+   {t:'range',k:'famt',name:'Amount',min:0,max:1,step:0.01,v:1,fmt:pct,hint:'How deep the malign flavours go at a given knob position.'},
+   {t:'range',k:'frate',name:'Movement',min:0,max:1,step:0.01,v:0,fmt:pct,link:'motion'},
+   {t:'range',k:'fmix',name:'Mix',min:0,max:1,step:0.01,v:1,fmt:pct,link:'mix',hint:'Low mix turns the scene to night.'}],
+  PHANTOM:[
+   {t:'info',k:'ppnotes',name:'Phantom notes',v:'Play MIDI into this track. Live: on a MIDI track set MIDI To > this track > Auto Malign. Best on headphones.'},
+   {t:'select',k:'ppmode',name:'Mode',opts:['Huggins (headphones)','Ghost (mono-safe)'],v:0,hint:'Huggins makes the note out of the difference between your ears. Ghost plays tuned resonators into the stereo side.'},
+   {t:'range',k:'ppassist',name:'Assist',min:0,max:1,step:0.01,v:0.25,fmt:pct,hint:'A tuned resonator under the phase cue helps the ear lock on (25% was clearest on a full mix). In Ghost mode this is the note level.'},
+   {t:'range',k:'ppcarrier',name:'Carrier',min:0,max:1,step:0.01,v:0.35,fmt:pct,hint:'Identical sound in both ears around each note, for the cue to ride on. Follows velocity.'},
+   {t:'range',k:'ppstrength',name:'Strength',min:0,max:1,step:0.01,v:0.5,fmt:pct,hint:'Width of the phase sweep and of the mono zone around each note.'},
+   {t:'switch',k:'ppfold',name:'Fold notes into the sweet spot (250–600 Hz)',v:true,hint:'Keeps each note name but moves it to where the ears follow phase best.'},
+   {t:'range',k:'pppartials',name:'Harmonics',min:1,max:6,step:1,v:6,fmt:v=>`${v}`},
+   {t:'range',k:'ppattack',name:'Attack',min:1,max:500,step:1,v:15,fmt:fmtMs},
+   {t:'range',k:'pprelease',name:'Release',min:5,max:3000,step:5,v:250,fmt:fmtMs},
+   {t:'range',k:'ppglide',name:'Glide',min:0,max:1000,step:1,v:0,fmt:v=>v?fmtMs(v):'Off'},
+   {t:'range',k:'ppbend',name:'Pitch bend range',min:0,max:24,step:1,v:2,fmt:v=>`±${v} st`},
+   {t:'select',k:'ppsource',name:'Source',opts:['This track + noise','Sidechain input'],v:0,hint:'What feeds the carrier and the resonators: this track (with noise as carrier), the sidechain input, or any other track with Auto Malign on it.'}]};
+function refineFields(fl){return fl==='PHANTOM'?[...REFINE.PHANTOM,...REFINE.common]:REFINE.common;}
+function refineLead(fl){return fl==='PHANTOM'?'Phantom notes: play pitches made of stereo phase with MIDI. Amount, movement and mix for PHANTOM are below.'
+  :`${fl}: amount, movement and mix. More refinements for this flavour are planned.`;}
 const PRO=[
+
  {name:'Alignment',lead:'How Learn lines up every track. These settings are shared by the whole session: change them in any window and every copy re-solves from what Learn already heard.',fields:[
    {t:'range',k:'loHz',name:'Lowest frequency rotated',min:2.7,max:200,step:0.1,v:2.7,fmt:v=>`${v<10?v.toFixed(1):Math.round(v)} Hz`},
    {t:'range',k:'hiHz',name:'Highest frequency rotated',min:200,max:4000,step:10,v:1000,fmt:v=>v>=1000?`${(v/1000).toFixed(1)} kHz`:`${v|0} Hz`,hint:'Above this the correction fades out. The FUSE and UNMASK flavours reach up to 4 kHz on their own.'},
@@ -1315,10 +1341,7 @@ const PRO=[
    {t:'range',k:'srot',name:'Side rotation',min:-180,max:180,step:1,v:0,fmt:v=>`${v}°`,hint:'Turns the side against the mid above the mono point: a phase widener.'},
    {t:'range',k:'wid',name:'Width',min:0,max:1,step:0.01,v:0.5,fmt:v=>`${Math.round(v*200)}%`,link:'width'}]},
  {name:'Groups',lead:'Tracks recorded from the same source move together: they keep their phase to each other and are aligned as one. Regrouping re-solves from what Learn already heard.',groups:[{id:1,name:'Kick in',group:'A',kind:'audio'},{id:2,name:'Kick out',group:'A',kind:'audio'},{id:3,name:'Snare top',group:'B',kind:'audio'},{id:4,name:'Snare bottom',group:'B',kind:'audio'},{id:5,name:'Bass DI',group:'C',kind:'audio',self:true},{id:6,name:'Bass amp',group:'C',kind:'audio'},{id:7,name:'Synth pad',group:'',kind:'midi'},{id:8,name:'Reverb',group:'',kind:'return'},{id:9,name:'Drums',group:'',kind:'group',excluded:true},{id:10,name:'Master',group:'',kind:'master',excluded:true}]},
- {name:'Flavour',lead:'Fine control for the selected flavour.',fields:[
-   {t:'range',k:'famt',name:'Amount',min:0,max:1,step:0.01,v:1,fmt:v=>`${Math.round(v*100)}%`,hint:'How deep the malign flavours go at a given knob position.'},
-   {t:'range',k:'frate',name:'Movement',min:0,max:1,step:0.01,v:0,fmt:v=>`${Math.round(v*100)}%`,link:'motion'},
-   {t:'range',k:'fmix',name:'Mix',min:0,max:1,step:0.01,v:1,fmt:v=>`${Math.round(v*100)}%`,link:'mix',hint:'Low mix turns the scene to night.'}]},
+ {name:'Refine flavour',refine:true,get lead(){return refineLead(P.flavor);},get fields(){return refineFields(P.flavor);}},
  {name:'Display',lead:'The session view is decoration with meaning. Keep it light in real time.',fields:[
    {t:'select',k:'fps',name:'Frame rate',opts:['30 fps','60 fps'],v:0,on:v=>{S.fps=v?60:30;}},
    {t:'switch',k:'tags',name:'Value tags in the view',v:true,on:v=>{P.pro=v;}}]}];
@@ -1336,12 +1359,14 @@ const PRO=[
         if(f.def===undefined)f.def=f.v;inp.title='Ctrl+click to reset';
         inp.addEventListener('pointerdown',e=>{if(e.ctrlKey||e.metaKey){e.preventDefault();if(f.link){MAC[f.link].reset();inp.value=MAC[f.link].get();}else inp.value=f.def;upd();}});
         inp.addEventListener('input',()=>{upd();if(f.link)MAC[f.link].set(f.v);f.on&&f.on(f.v);});}
+      else if(f.t==='info'){box.innerHTML=`<div class="row"><label></label></div><p class="hint info" id="${idf}"></p>`;box.querySelector('label').textContent=f.name;box.querySelector('p').textContent=f.v;}
       else if(f.t==='action'){box.innerHTML=`<div class="row"><label></label></div><button type="button" id="${idf}"></button>`;box.querySelector('label').textContent=f.name;const bt=box.querySelector('button');bt.textContent=f.label||f.name;bt.addEventListener('click',()=>{f.on&&f.on();});}
       else if(f.t==='select'){box.innerHTML=`<div class="row"><label for="${idf}"></label></div><select id="${idf}"></select>`;box.querySelector('label').textContent=f.name;const sel=box.querySelector('select');
         f.opts.forEach((o,k)=>{const op=document.createElement('option');op.value=k;op.textContent=o;sel.appendChild(op);});sel.value=f.v;sel.addEventListener('change',()=>{f.v=+sel.value;f.on&&f.on(f.v);});}
       else{box.innerHTML=`<label class="switch"><input type="checkbox" id="${idf}"><span></span></label>`;box.querySelector('span').textContent=f.name;const cb=box.querySelector('input');cb.checked=f.v;cb.addEventListener('change',()=>{f.v=cb.checked;f.on&&f.on(f.v);});}
       if(f.hint){const hp=document.createElement('p');hp.className='hint';hp.textContent=f.hint;box.appendChild(hp);}grid.appendChild(box);}
     panel.appendChild(grid);}
+  PRO.rerenderIfRefine=()=>{if(PRO[cur]&&PRO[cur].refine&&!document.getElementById('propage').hidden)render();};
   PRO.forEach((sec,k)=>{const b=document.createElement('button');b.textContent=sec.name;b.setAttribute('aria-current',k===0?'true':'false');b.addEventListener('click',()=>{cur=k;rail.querySelectorAll('button').forEach(x=>x.setAttribute('aria-current',x===b?'true':'false'));render();});rail.appendChild(b);});
   render();}
 new ResizeObserver(()=>{resizeView();S.dirty=true;}).observe(document.querySelector('.stage'));
@@ -1363,7 +1388,7 @@ function drawPyr(t){const W=96,H=72;pg.clearRect(0,0,W,H);pg.strokeStyle='#3a3a3
 // GridScan (rebuilt): linesColor #4d4757, scanColor #7dd3fc, cells 5, depth 3.2, scanDuration 4.1 s, scanDelay 2.2 s, ping on click,
 // lineThickness 1.4, solid, depthFade 1, shading 1, reflection 1, points, scan backward, scanWidth 5, trail 1, glow 1.5, parallax 0.6,
 // autoScan, interactive (grid pushes away from the mouse), intro. Runs only while hovered; at rest it is a still black grid.
-const SCAN_T=4.1/1.3;const GS={lines:[77,71,87],scan:[57,230,176],cells:5,depth:3.2,dur:4.1,delay:2.2,thick:1.4,depthFade:1,shading:1,reflection:1,width:3,trail:1,glow:1.5,parallax:0.78};
+const SCAN_T=4.1/1.3;const GS={lines:[77,71,87],scan:[57,230,176],cells:5,depth:3.2,dur:4.1,delay:2.2,thick:1.4,depthFade:1,shading:1,reflection:1,width:3,trail:1,glow:1.5,parallax:1.01};
 // HoloMosaic (rebuilt): color #1e1921, metal #e8ebf1, pearl, tileSize .85, gap .1, scatter .16, tilt .35, saturation 1.3, intensity .75,
 // ripple .25, glitter 1, sheen 1.5, grain .25, speed .45, intro, mouse, flip on click, bevel .36, rotation -90, swirl 1.75, bands .7, softness .23, fade .31,
 // mouseStrength .55, mouseRadius .25.
@@ -1744,7 +1769,7 @@ void main() {
    the module is hovered in the active window. Falls back to the Canvas2D tunnel if WebGL2 is unavailable. */
 const GSN={lines:[0x4d/255,0x47/255,0x57/255],scan:[0x39/255,0xe6/255,0xb0/255],   // scan = the pyramid's green (#39e6b0)
   cells:5,depth:1.4,dur:2.1,delay:1.6,
-  thick:3,depthFade:1,shading:1,reflection:1,scanWidth:3,trail:1,glow:1.5,parallax:0.455,points:true,eyeDist:1.25,intro:2.2};
+  thick:3,depthFade:1,shading:1,reflection:1,scanWidth:3,trail:1,glow:1.5,parallax:0.59,points:true,eyeDist:1.25,intro:2.2};
 GSN.core=GSN.scan.map(c=>c+(1-c)*0.65);
 let GSGL=null;
 function gsInit(){if(GSGL!==null)return GSGL;GSGL=false;

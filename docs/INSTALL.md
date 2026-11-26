@@ -87,8 +87,29 @@
 **Match:** Match amount (same as the Match slider). **Stereo:** *Phase mono below* keeps the side's phase locked to
 the mid below the set frequency, so the low end stays mono-safe whatever the flavour does (Off by default); *Side
 rotation* turns the side against the mid above that point, a phase widener; *Width* as on the main page.
-**Groups:** see above. **Flavour:** *Amount* sets how deep the malign flavours go at a given knob position (100% by
-default); Movement and Mix are the Motion and Mix controls. **Display:** frame rate and value tags (window only).
+**Groups:** see above. **Refine flavour:** changes with the selected flavour. Every flavour has *Amount* (how deep
+the malign flavours go at a given knob position, 100% by default), *Movement* and *Mix*; PHANTOM adds Phantom notes
+(below). **Display:** frame rate and value tags (window only).
+
+## Phantom notes (Refine flavour, PHANTOM selected)
+Play pitches made of stereo phase with MIDI. Best on headphones.
+- **Route MIDI to it.** Live: on a MIDI track, set *MIDI To* to the track with Auto Malign, then pick Auto Malign in
+  the second menu. Studio One: set an instrument track's output to the Auto Malign insert. Notes land on the grid
+  (they are scheduled one plugin latency later, which the host compensates).
+- **Mode:** *Huggins* makes each note out of the difference between your ears (a phase illusion; the cue disappears
+  on speakers and in mono). *Ghost* plays resonators tuned to the notes into the stereo side only: clear notes that
+  cancel completely in mono.
+- **Assist** (25%): a tuned resonator under the Huggins cue so the ear locks on; in Ghost mode the note level.
+  **Carrier** (35%): identical sound in both ears around each note for the cue to ride on; follows velocity.
+  **Strength:** width of the phase sweep and the mono zone. **Fold notes into the sweet spot:** keeps each note name
+  but moves it to 250–600 Hz, where the ears follow phase best. **Harmonics**, **Attack**, **Release**, **Glide**,
+  **Pitch bend range**; the sustain pedal holds notes.
+- **Source:** what feeds the carrier and resonators: *This track + noise* (default), the *Sidechain input* (enable
+  it in the host: Live's Sidechain section, Studio One's sidechain button), or *any other track with Auto Malign on
+  it* (no routing needed; works while the transport plays).
+- **Safety:** the phase cue adds no energy. The resonators are capped, the carrier never exceeds the Carrier setting
+  × the track's level, and while notes sound the output is rounded off above 0 dBFS and never passes +6 dBFS.
+  Listen at normal levels: turning up to chase a faint effect is the real risk to your ears.
 
 ## Groups
 Pro page > Groups lists every linked Auto Malign under its track name. Give tracks recorded from the same source the

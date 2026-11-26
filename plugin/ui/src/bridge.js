@@ -57,9 +57,17 @@
   pf('installLive').on = () => act('installLive');
 
   // Pro page: per-copy controls (linked like the macros in Session scope) and the session-wide analysis settings
-  const PF = k => { for (const sec of PRO) for (const f of (sec.fields || [])) if (f.k === k) return f; return null; };
+  const PF = k => { for (const list of [...PRO.map(sec => sec.fields || []), ...Object.values(REFINE)]) for (const f of list) if (f.k === k) return f; return null; };
   for (const k of ['famt', 'pmono', 'srot']) PF(k).on = v => send(k, v);
   for (const k of ['loHz', 'hiHz', 'smooth', 'stiff', 'guard']) PF(k).on = v => send(k, v);
+  // Phantom notes (Refine flavour > PHANTOM)
+  for (const k of ['ppmode', 'ppassist', 'ppcarrier', 'ppstrength', 'ppfold', 'pppartials', 'ppattack', 'pprelease', 'ppglide', 'ppbend'])
+    PF(k).on = v => send(k, v);
+  let ppSourceIds = [];                                   // select index >= 2 -> session track id
+  PF('ppsource').on = v => {
+    if (v < 2) send('ppsource', v);
+    else { send('ppSourceTrack', ppSourceIds[v - 2] ?? -1); send('ppsource', 2); }
+  };
   let anchorIds = [-1];                                   // select index -> track id (-1 = automatic)
   PF('anchor').on = v => send('anchor', anchorIds[v] ?? -1);
   // reflect a value into a Pro field (and its control, if that section is on screen)
@@ -116,6 +124,28 @@
       const rg = document.getElementById('pf-latMs');
       if (rg && !fresh('latMs') && document.activeElement !== rg) { rg.value = lm.v; rg.dispatchEvent(new Event('input')); }
       if (s.msg && s.msg !== lastMsg) { lastMsg = s.msg; toast(s.msgOk ? 'ok' : 'warn', s.msg); }
+
+      // Phantom notes
+      if (s.phantom) {
+        const p = s.phantom;
+        showField('ppmode', p.mode); showField('ppassist', p.assist); showField('ppcarrier', p.carrier);
+        showField('ppstrength', p.strength); showField('ppfold', p.fold); showField('pppartials', p.partials);
+        showField('ppattack', p.attack); showField('pprelease', p.release); showField('ppglide', p.glide); showField('ppbend', p.bend);
+        // source list: this track, sidechain, then every other track with Auto Malign
+        const others = (s.tracks || []).filter(t => !t.self);
+        const ids = others.map(t => t.id), opts = ['This track + noise', 'Sidechain input' + (p.sidechain ? '' : ' (off in the host)'), ...others.map(t => 'Track: ' + (t.name || 'Track'))];
+        const f = PF('ppsource'), el = document.getElementById('pf-ppsource');
+        if (JSON.stringify(opts) !== JSON.stringify(f.opts) || JSON.stringify(ids) !== JSON.stringify(ppSourceIds)) {
+          f.opts = opts; ppSourceIds = ids;
+          if (el) { el.textContent = ''; opts.forEach((o, i) => { const op = document.createElement('option'); op.value = i; op.textContent = o; el.appendChild(op); }); }
+        }
+        const idx = p.source < 2 ? p.source : Math.max(0, 2 + ids.indexOf(p.sourceTrack));
+        if (!fresh('ppsource')) { f.v = idx; if (el) el.value = idx; }
+        const info = document.getElementById('pf-ppnotes');
+        if (info) info.textContent = (p.notes && p.notes.length)
+          ? 'Sounding: ' + p.notes.map(noteName).join('  ')
+          : 'Play MIDI into this track. Live: on a MIDI track set MIDI To > this track > Auto Malign. Best on headphones.';
+      }
 
       // Pro page values
       for (const k of ['famt', 'pmono', 'srot']) if (k in s) showField(k, s[k]);
