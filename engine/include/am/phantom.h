@@ -22,6 +22,7 @@ namespace am {
 struct PhantomParams {
     bool huggins = true;       // false = Ghost (resonator only)
     float assist = 0.25f;      // resonator level (0..1); in Ghost mode the note level
+    float purity = 0.7f;       // 0..1: how much of the resonator's noise is removed, keeping only the note and its harmonics
     float carrier = 0.35f;     // identical noise/source around the notes (0..1), relative to the track
     float strength = 0.5f;     // 0..1: band width of the phase sweep (8..20 % of the note) and of the mono zone
     bool fold = true;          // move every note into 250..600 Hz, where the ears follow phase best
@@ -98,6 +99,8 @@ private:
         std::array<Biquad, kPartials> ap, collapse, car;   // phase sweep (left), mono zone (side), carrier band
         int nPart = 0;
         Biquad hp, lp;                                      // resonator input band
+        std::array<Biquad, kPartials> clean;                // narrow bands on the note's harmonics (Purity)
+        int nClean = 0; double fClean = 0, purityApplied = -1;
         std::vector<float> comb; int cw = 0; double lp1 = 0;
         double ry = 1e-9, gain = 0;                         // resonator level control
         uint64_t age = 0;
@@ -128,7 +131,8 @@ private:
             v->f = (p_.glideMs > 0 && lastFreq_ > 0) ? lastFreq_ : f;
             v->env = 0; v->fApplied = 0; v->gain = 0; v->ry = 1e-9; v->lp1 = 0; v->cw = 0;
             std::fill(v->comb.begin(), v->comb.end(), 0.f);
-            for (auto* bank : { &v->ap, &v->collapse, &v->car }) for (auto& b : *bank) b.reset();
+            for (auto* bank : { &v->ap, &v->collapse, &v->car, &v->clean }) for (auto& b : *bank) b.reset();
+            v->fClean = 0; v->purityApplied = -1;
             v->hp.reset(); v->lp.reset();
             highpass(v->hp, 150); lowpass(v->lp, 6000);
         }
@@ -153,6 +157,17 @@ private:
             ++v.nPart;
         }
         v.fApplied = f;
+    }
+
+    void retuneClean(Voice& v, double f, double pur) {
+        const double Q = 8.0 + 72.0 * pur;                 // narrower with more Purity
+        v.nClean = 0;
+        for (int k = 1; k <= kPartials; ++k) {
+            const double fk = f * k;
+            if (fk > 6000.0 || fk > sr_ * 0.4) break;
+            v.clean[(size_t)v.nClean++].bandpass(fk, Q, sr_);
+        }
+        v.fClean = f; v.purityApplied = pur;
     }
 
     void run(float* L, float* R, const float* sL, const float* sR, int n) {
@@ -194,12 +209,20 @@ private:
                 v.lp1 = 0.65 * ((1 - fr) * a + fr * b) + 0.35 * v.lp1;
                 const double y = ex + 0.93 * v.lp1;
                 v.comb[(size_t)v.cw] = (float)y; v.cw = (v.cw + 1) % N;
-                v.ry += (y * y - v.ry) * rmsA;
-                if (!v.releasing) {                         // level: Assist x 0.6 x the music's level (held while releasing)
-                    const double want = 0.6 * std::sqrt(rmsM_) / std::sqrt(std::max(v.ry, 1e-12));
+                // only the ringing (not the music that excites it), then Purity keeps just the note's harmonics
+                const double ring = y - ex;
+                const double pur = std::clamp((double)p_.purity, 0.0, 1.0);
+                if (std::abs(f - v.fClean) > 1e-4 * f && ((i & 31) == 0 || v.fClean == 0)) retuneClean(v, f, pur);
+                else if (std::abs(pur - v.purityApplied) > 0.02 && (i & 31) == 0) retuneClean(v, f, pur);
+                double tonal = 0;
+                for (int k = 0; k < v.nClean; ++k) tonal += v.clean[(size_t)k].run((float)ring);
+                const double out = ring + pur * (tonal - ring);
+                v.ry += (out * out - v.ry) * rmsA;
+                if (!v.releasing) {                         // level: Assist x 0.29 x the music's level (held while releasing)
+                    const double want = 0.29 * std::sqrt(rmsM_) / std::sqrt(std::max(v.ry, 1e-12));
                     v.gain += (std::min(16.0, want) - v.gain) * 0.001;
                 }
-                assistSide += std::clamp(y * v.gain * p_.assist * depth, -1.0, 1.0);
+                assistSide += std::clamp(out * v.gain * p_.assist * depth, -1.0, 1.0);
                 if (!p_.huggins) continue;
                 hug = true;
                 // Huggins: make the note's zone identical in both ears, add the carrier there, sweep the left phase

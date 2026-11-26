@@ -82,6 +82,27 @@ int main() {
         std::printf("    peak with 10 loud notes, full assist and carrier: %.2f\n", pk);
         check(finite && pk <= 2.0, "safety: never past +6 dBFS, even with 10 loud notes and everything at maximum");
     }
+    {   // 7. Purity: more of the resonator's output sits on the note's harmonics
+        auto tonalShare = [&](float purity) {
+            PhantomParams p; p.huggins = false; p.assist = 1.f; p.purity = purity;
+            auto [L, R] = render(mL, mR, p, [&](PhantomNotes& pn) { pn.noteOn(note, 1.f, 1000); });
+            const size_t from = (size_t)(1.0 * sr), len = (size_t)(1.5 * sr);
+            int n = 1; while (n < (int)len) n <<= 1; FFT fft(n); std::vector<cplx> A(n);
+            for (size_t i = 0; i < len; ++i) A[i] = 0.5 * ((L[from + i] - R[from + i]) - (mL[from + i] - mR[from + i]));
+            fft.transform(A); double on = 0, off = 0;
+            for (int k = 1; k < n / 2; ++k) {
+                const double f = k * sr / n;
+                if (f < 100 || f > 6000) continue;
+                bool h = false;
+                for (int m = 1; m <= 8; ++m) h |= std::abs(f - m * f0) < 0.03 * m * f0;
+                (h ? on : off) += std::norm(A[k]);
+            }
+            return 10 * std::log10(on / off);
+        };
+        const double raw = tonalShare(0.f), pure = tonalShare(1.f);
+        std::printf("    resonator on-note vs between-notes energy: purity 0 %+.1f dB, purity 1 %+.1f dB\n", raw, pure);
+        check(pure > raw + 3, "Purity: the resonator's noise is removed, leaving the note and its harmonics");
+    }
     std::printf(fails ? "%d FAILED\n" : "all checks passed\n", fails);
     return fails ? 1 : 0;
 }

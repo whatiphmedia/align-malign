@@ -142,6 +142,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout AlignMalignProcessor::create
     // Phantom notes (Refine flavour > PHANTOM): MIDI-played pitches made of stereo phase
     l.add(std::make_unique<AudioParameterChoice>(ParameterID{ "ppmode", 1 }, "Phantom mode", StringArray{ "Huggins", "Ghost" }, 0));
     l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppassist", 1 }, "Phantom assist", NormalisableRange<float>(0.f, 1.f), 0.25f));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "pppurity", 1 }, "Phantom purity", NormalisableRange<float>(0.f, 1.f), 0.7f));
     l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppcarrier", 1 }, "Phantom carrier", NormalisableRange<float>(0.f, 1.f), 0.35f));
     l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppstrength", 1 }, "Phantom strength", NormalisableRange<float>(0.f, 1.f), 0.5f));
     l.add(std::make_unique<AudioParameterBool>(ParameterID{ "ppfold", 1 }, "Phantom sweet-spot folding", true));
@@ -188,6 +189,8 @@ AlignMalignProcessor::AlignMalignProcessor()
     pPpSource_ = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("ppsource"));
     pPpAssist_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("ppassist"));
     pPpCarrier_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("ppcarrier"));
+    pPpPurity_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("pppurity"));
+    jassert(pPpPurity_);
     pPpStrength_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("ppstrength"));
     pPpAttack_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("ppattack"));
     pPpRelease_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("pprelease"));
@@ -417,6 +420,7 @@ void AlignMalignProcessor::updatePhantomParams() {
     p.huggins = pPpMode_->getIndex() == 0;
     p.assist = pPpAssist_->get();
     p.carrier = pPpCarrier_->get();
+    p.purity = pPpPurity_->get();
     p.strength = pPpStrength_->get();
     p.fold = pPpFold_->get();
     p.partials = pPpPartials_->get();
@@ -595,6 +599,7 @@ juce::var AlignMalignProcessor::makeUIState() {
         pp->setProperty("mode", pPpMode_->getIndex());
         pp->setProperty("assist", pPpAssist_->get());
         pp->setProperty("carrier", pPpCarrier_->get());
+        pp->setProperty("purity", pPpPurity_->get());
         pp->setProperty("strength", pPpStrength_->get());
         pp->setProperty("fold", pPpFold_->get());
         pp->setProperty("partials", pPpPartials_->get());
