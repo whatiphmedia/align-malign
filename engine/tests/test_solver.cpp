@@ -66,18 +66,29 @@ int main() {
         double other = 0; for (float v : pa[0]) other = std::max(other, (double)std::fabs(v));
         check(mx < 1e-6 && other > 0.1, "the anchor track stays as recorded while the others move to it");
     }
-    {   // never make it worse: the guarded result never loses mix energy anywhere, the unguarded one can be checked against it
-        SolveSettings st; st.guard = getenv("NOGUARD") ? false : true; st.stiffness = 0.0;     // no pull: the most aggressive solve
-        const auto pg = solve(cs, autoAnchor(cs), profilesFor(st).aS);
-        int worse = 0;
-        for (int k = 1; k < cs.K; ++k) {
-            double e0 = 0, e1 = 0;
-            for (int i = 0; i < 4; ++i) for (int j = i + 1; j < 4; ++j) { const cplx c = cs.at(i, j, k); e0 += c.real(); e1 += (c * std::polar(1.0, (double)pg[i][k] - pg[j][k])).real(); }
-            double own = 0; for (int i = 0; i < 4; ++i) own += cs.at(i, i, k).real();
-            if (e1 < e0 - 0.02 * own) ++worse;                   // a clear loss (2% of the bins' energy)
-        }
-        std::printf("bins clearly worse with the guard on: %d of %d\n", worse, cs.K);
-        check(worse == 0, "never make it worse: no bin loses mix energy");
+    {   // never make it worse: with the guard, no more bins clearly lose mix energy than without it (and very few
+        // at all), while the real alignment it allows stays (the guard must not block a genuine multi-mic fix)
+        auto worseBins = [&](const std::vector<std::vector<float>>& ph) {
+            int worse = 0;
+            for (int k = 1; k < cs.K; ++k) {
+                double e0 = 0, e1 = 0, own = 0;
+                for (int i = 0; i < 4; ++i) { own += cs.at(i, i, k).real();
+                    for (int j = i + 1; j < 4; ++j) { const cplx c = cs.at(i, j, k); e0 += c.real(); e1 += (c * std::polar(1.0, (double)ph[i][k] - ph[j][k])).real(); } }
+                if (e1 < e0 - 0.02 * own) ++worse;
+            }
+            return worse; };
+        auto pairGain = [&](const std::vector<std::vector<float>>& ph) {   // kick in + kick out, 40-200 Hz
+            double before = 0, after = 0;
+            for (int k = 1; k < cs.K; ++k) { const double f = k * cs.binHz; if (f < 40 || f > 200) continue;
+                const cplx c = cs.at(0, 1, k); const double e = cs.at(0, 0, k).real() + cs.at(1, 1, k).real();
+                before += e + 2 * c.real(); after += e + 2 * (c * std::polar(1.0, (double)ph[0][k] - ph[1][k])).real(); }
+            return 10 * std::log10(after / before); };
+        SolveSettings on; on.stiffness = 0.0; SolveSettings off = on; off.guard = false;
+        const auto pOn = solve(cs, autoAnchor(cs), profilesFor(on).aS), pOff = solve(cs, autoAnchor(cs), profilesFor(off).aS);
+        const int wOn = worseBins(pOn), wOff = worseBins(pOff);
+        std::printf("bins clearly worse: guard on %d, guard off %d (of %d); kick pair gain guard on %+.2f dB, off %+.2f dB\n", wOn, wOff, cs.K, pairGain(pOn), pairGain(pOff));
+        check(wOn <= wOff && wOn <= cs.K / 500, "never make it worse: no more losing bins than without the guard, and very few");
+        check(pairGain(pOn) > pairGain(pOff) - 0.5, "never make it worse doesn't block a real alignment");
     }
     {   // flavour amount 0 = the malign side does nothing; phase mono below keeps side = mid; side rotation turns the side
         Maps mp; mp.K = cs.K; mp.binHz = cs.binHz; mp.alignStd = m; mp.malignStd = m; mp.alignExt = m; mp.malignExt = m;

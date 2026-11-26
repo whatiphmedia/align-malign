@@ -242,38 +242,57 @@ inline std::vector<std::vector<float>> solve(const CrossSpectra& cs, int anchor,
         }
     }
 
-    // 3) never make it worse (align): where the correction would not add energy to the mix, fade it back to the
-    //    sound as recorded. Checked on the faded result itself (a half-way rotation can be worse than either end),
-    //    a few rounds, so the fades never create a loss of their own.
+    // 3) never make it worse (align): where the correction would clearly lose mix energy (more than 1% of the
+    //    tracks' own energy there), scale it back by the amount that keeps the most gain. The choices are smoothed
+    //    across frequency and kept within the time-shift cap in both directions. A single pass: small, harmless
+    //    losses are left alone, so one marginal band can't shut down its neighbours.
     if (p.guard && !p.anti) {
         const std::vector<std::vector<float>> full = out;
-        std::vector<double> keep(K, 1.0);
-        auto energyGain = [&](const std::vector<std::vector<float>>& ph, int k) {   // smoothed mix energy change at bin k
+        auto gainAt = [&](double sc, int k, double& own) {   // smoothed mix energy change at bin k with sc x correction
             int lo, hi; win(k, lo, hi);
-            double e0 = 0, e1 = 0;
-            for (int i = 0; i < T; ++i)
+            double e0 = 0, e1 = 0; own = 0;
+            for (int i = 0; i < T; ++i) {
+                own += (pre[pid(i, i)][hi + 1] - pre[pid(i, i)][lo]).real();
                 for (int j = i + 1; j < T; ++j) {
                     const cplx c = pre[pid(i, j)][hi + 1] - pre[pid(i, j)][lo];
                     e0 += c.real();
-                    e1 += (c * std::polar(1.0, (double)ph[i][k] - ph[j][k])).real();
+                    e1 += (c * std::polar(1.0, sc * ((double)full[i][k] - full[j][k]))).real();
                 }
-            return e1 - e0;
+            }
+            return 2 * (e1 - e0);
         };
-        for (int round = 0; round < 6; ++round) {
-            bool changed = false;
-            for (int k = 1; k < K; ++k)
-                if (keep[k] > 0 && energyGain(out, k) < 0) { keep[k] = 0; changed = true; }
-            if (round > 0 && !changed) break;
-            // allowed size of the correction: zero at every lossy bin, growing no faster than the time-shift cap
-            // away from it (both directions), so the result is exactly as recorded there and stays within the cap
-            std::vector<double> bound(K, 1e9);
-            double d = 1e9;
-            for (int k = 1; k < K; ++k) { d = keep[k] > 0 ? d + maxStep : 0.0; bound[k] = d; }
-            d = 1e9;
-            for (int k = K - 1; k >= 1; --k) { d = keep[k] > 0 ? d + maxStep : 0.0; bound[k] = std::min(bound[k], d); }
-            for (int t = 0; t < T; ++t)
-                for (int k = 1; k < K; ++k) out[t][k] = (float)std::clamp((double)full[t][k], -bound[k], bound[k]);
+        std::vector<double> sc(K, 1.0);
+        for (int k = 1; k < K; ++k) {
+            double own = 0;
+            if (gainAt(1.0, k, own) >= -0.01 * own) continue;          // fine, or only a negligible loss
+            double best = 0, bestG = 0;
+            for (double c : { 0.25, 0.5, 0.75 }) { double o; const double g = gainAt(c, k, o); if (g > bestG) { bestG = g; best = c; } }
+            sc[k] = best;
         }
+        auto build = [&](const std::vector<double>& scale) {
+        std::vector<double> ps(K + 1, 0.0);
+        for (int k = 0; k < K; ++k) ps[k + 1] = ps[k] + scale[k];
+        for (int t = 0; t < T; ++t) {
+            std::vector<double> tgt(K, 0.0);
+            for (int k = 1; k < K; ++k) { int lo, hi; win(k, lo, hi); tgt[k] = full[t][k] * std::min(scale[k], (ps[hi + 1] - ps[lo]) / (hi - lo + 1)); }
+            // follow the target within the time-shift cap, forwards then backwards (so fades start before a dip)
+            double cur = 0;
+            for (int k = 1; k < K; ++k) { cur += std::clamp(tgt[k] - cur, -maxStep, maxStep); tgt[k] = cur; }
+            for (int k = K - 2; k >= 1; --k) tgt[k] = std::clamp(tgt[k], tgt[k + 1] - maxStep, tgt[k + 1] + maxStep);
+            for (int k = 1; k < K; ++k) out[t][k] = (float)tgt[k];
+        }
+        };
+        build(sc);
+        // check pass: anything that still clearly loses (the smoothing or the cap can cause it) goes back to as
+        // recorded, and the result is rebuilt once
+        auto lossAt = [&](int k) { int lo, hi; win(k, lo, hi); double e0 = 0, e1 = 0, own = 0;
+            for (int i = 0; i < T; ++i) { own += (pre[pid(i, i)][hi + 1] - pre[pid(i, i)][lo]).real();
+                for (int j = i + 1; j < T; ++j) { const cplx c = pre[pid(i, j)][hi + 1] - pre[pid(i, j)][lo];
+                    e0 += c.real(); e1 += (c * std::polar(1.0, (double)out[i][k] - out[j][k])).real(); } }
+            return 2 * (e1 - e0) < -0.01 * own; };
+        bool again = false;
+        for (int k = 1; k < K; ++k) if (lossAt(k)) { sc[k] = 0; again = true; }
+        if (again) build(sc);
     }
     return out;
 }
