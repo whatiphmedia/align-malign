@@ -64,23 +64,16 @@ jobs:
         with:
           files: AutoMalign-Windows-x64.zip
 
-      - name: Remove superseded files from the Latest build
+      - name: Publish the Latest build (every push to main)
         if: github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for a in $(gh release view latest --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' 2>/dev/null); do
-            if [ "$a" != "AutoMalign-Windows-x64.zip" ]; then gh release delete-asset latest "$a" --repo "$GITHUB_REPOSITORY" -y; fi
-          done
-
-      - name: Latest build (every push to main)
-        if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: Latest build
-          prerelease: true
-          make_latest: false
-          body: Built automatically from the newest commit on main (${{ github.sha }}).
-          files: AutoMalign-Windows-x64.zip
+          # Replace the release outright, so its date, commit and tag are this build's and it shows as Latest.
+          gh release delete latest --repo "$GITHUB_REPOSITORY" --cleanup-tag -y || true
+          short="${GITHUB_SHA:0:7}"
+          when="$(date -u '+%Y-%m-%d %H:%M UTC')"
+          gh release create latest AutoMalign-Windows-x64.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest \
+            --title "Latest build ($when, $short)" \
+            --notes "Built automatically from the newest commit on main ($GITHUB_SHA). Download AutoMalign-Windows-x64.zip below; install steps are in INSTALL.md inside the zip."
