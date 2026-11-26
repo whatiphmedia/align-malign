@@ -100,7 +100,10 @@ Play pitches made of stereo phase with MIDI. Best on headphones.
   on speakers and in mono). *Ghost* plays resonators tuned to the notes into the stereo side only: clear notes that
   cancel completely in mono.
 - **Assist** (25%): a tuned resonator under the Huggins cue so the ear locks on; in Ghost mode the note level.
-  **Carrier** (35%): identical sound in both ears around each note for the cue to ride on; follows velocity.
+  **Purity** (70%): removes noise after the notes are made: keeps only the note and its harmonics in the resonator
+  and narrows the carrier to the note. **Carrier** (35%): identical sound in both ears around each note for the cue
+  to ride on; follows velocity. **Carrier fills gaps only** (on): noise is added only where the track itself has
+  little sound around the note, so a full mix gets almost none and sparse sounds (hats) still get it.
   **Strength:** width of the phase sweep and the mono zone. **Fold notes into the sweet spot:** keeps each note name
   but moves it to 250–600 Hz, where the ears follow phase best. **Harmonics**, **Attack**, **Release**, **Glide**,
   **Pitch bend range**; the sustain pedal holds notes.

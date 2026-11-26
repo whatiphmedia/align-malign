@@ -102,7 +102,7 @@ private:
     juce::AudioParameterChoice *pPpMode_ = nullptr, *pPpSource_ = nullptr;
     juce::AudioParameterFloat *pPpAssist_ = nullptr, *pPpCarrier_ = nullptr, *pPpPurity_ = nullptr, *pPpStrength_ = nullptr, *pPpAttack_ = nullptr,
                               *pPpRelease_ = nullptr, *pPpGlide_ = nullptr, *pPpBend_ = nullptr;
-    juce::AudioParameterBool* pPpFold_ = nullptr;
+    juce::AudioParameterBool *pPpFold_ = nullptr, *pPpFill_ = nullptr;
     juce::AudioParameterInt* pPpPartials_ = nullptr;
     std::shared_ptr<am::SharedRing> ownRing_;          // this track's input, for other tracks' Phantom notes
     std::shared_ptr<am::SharedRing> srcRing_, srcRingPrev_;   // the chosen source track (kept alive one extra tick)

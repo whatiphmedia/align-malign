@@ -103,6 +103,24 @@ int main() {
         std::printf("    resonator on-note vs between-notes energy: purity 0 %+.1f dB, purity 1 %+.1f dB\n", raw, pure);
         check(pure > raw + 3, "Purity: the resonator's noise is removed, leaving the note and its harmonics");
     }
+    {   // 8. carrier fills gaps: on a track that already has sound around the note it backs off; on a sparse one it stays
+        auto carrierAdded = [&](const std::vector<float>& inL, const std::vector<float>& inR, bool fill) {
+            PhantomParams p; p.assist = 0.f; p.fillGaps = fill;
+            PhantomParams q = p; q.carrier = 0.f;
+            auto a = render(inL, inR, p, [&](PhantomNotes& pn) { pn.noteOn(note, 1.f, 1000); });
+            auto b = render(inL, inR, q, [&](PhantomNotes& pn) { pn.noteOn(note, 1.f, 1000); });
+            double e = 0; for (int i = (int)sr; i < N; ++i) e += std::pow(a.first[i] - b.first[i], 2) + std::pow(a.second[i] - b.second[i], 2);
+            return 10 * std::log10(e + 1e-30);
+        };
+        // dense: pink-ish noise with plenty of energy at the note; sparse: only highs (a hi-hat stand-in)
+        std::vector<float> dense(N), sparse(N); double lp = 0;
+        for (int i = 0; i < N; ++i) { lp = 0.98 * lp + 0.02 * g(rng) * 10; dense[i] = (float)lp; }
+        { double prev = 0; for (int i = 0; i < N; ++i) { const double x = g(rng); sparse[i] = (float)(x - prev) * 0.5f; prev = x; } }
+        const double denseCut = carrierAdded(dense, dense, false) - carrierAdded(dense, dense, true);
+        const double sparseCut = carrierAdded(sparse, sparse, false) - carrierAdded(sparse, sparse, true);
+        std::printf("    carrier reduced by filling gaps: dense track %.1f dB, sparse track %.1f dB\n", denseCut, sparseCut);
+        check(denseCut > 10 && sparseCut < 6, "carrier fills gaps: backs off where the track has sound, stays where it doesn't");
+    }
     std::printf(fails ? "%d FAILED\n" : "all checks passed\n", fails);
     return fails ? 1 : 0;
 }

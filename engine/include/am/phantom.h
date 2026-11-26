@@ -24,6 +24,7 @@ struct PhantomParams {
     float assist = 0.25f;      // resonator level (0..1); in Ghost mode the note level
     float purity = 0.7f;       // 0..1: how much of the resonator's noise is removed, keeping only the note and its harmonics
     float carrier = 0.35f;     // identical noise/source around the notes (0..1), relative to the track
+    bool fillGaps = true;      // add carrier only where the track itself has little sound around the note
     float strength = 0.5f;     // 0..1: band width of the phase sweep (8..20 % of the note) and of the mono zone
     bool fold = true;          // move every note into 250..600 Hz, where the ears follow phase best
     int partials = 6;          // harmonics per note (1..6), up to 1.5 kHz
@@ -97,6 +98,8 @@ private:
         int note = 0; float vel = 1; double env = 0;
         double f = 440, fTarget = 440, fApplied = 0;
         std::array<Biquad, kPartials> ap, collapse, car;   // phase sweep (left), mono zone (side), carrier band
+        std::array<Biquad, kPartials> own;                  // the track's own sound in the carrier band
+        std::array<double, kPartials> ownMs{}, carMs{}, fill{};
         int nPart = 0;
         Biquad hp, lp;                                      // resonator input band
         std::array<Biquad, kPartials> clean;                // narrow bands on the note's harmonics (Purity)
@@ -131,7 +134,8 @@ private:
             v->f = (p_.glideMs > 0 && lastFreq_ > 0) ? lastFreq_ : f;
             v->env = 0; v->fApplied = 0; v->gain = 0; v->ry = 1e-9; v->lp1 = 0; v->cw = 0;
             std::fill(v->comb.begin(), v->comb.end(), 0.f);
-            for (auto* bank : { &v->ap, &v->collapse, &v->car, &v->clean }) for (auto& b : *bank) b.reset();
+            for (auto* bank : { &v->ap, &v->collapse, &v->car, &v->clean, &v->own }) for (auto& b : *bank) b.reset();
+            v->ownMs.fill(0); v->carMs.fill(0); v->fill.fill(1);
             v->fClean = 0; v->purityApplied = -1;
             v->hp.reset(); v->lp.reset();
             highpass(v->hp, 150); lowpass(v->lp, 6000);
@@ -155,6 +159,7 @@ private:
             v.collapse[(size_t)v.nPart].bandpass(fk, 1.0 / (5.0 * bw), sr_);  // mono zone, ~5x the sweep band
             // carrier band: 3x the sweep band at Purity 0, narrowing to ~0.8x at full Purity (less hiss between notes)
             v.car[(size_t)v.nPart].bandpass(fk, 1.0 / ((3.0 - 2.2 * std::clamp((double)p_.purity, 0.0, 1.0)) * bw), sr_);
+            v.own[(size_t)v.nPart] = v.car[(size_t)v.nPart]; v.own[(size_t)v.nPart].reset();
             ++v.nPart;
         }
         v.fApplied = f; v.purityCar = p_.purity;
@@ -181,6 +186,7 @@ private:
         const double bendA = 1.0 - std::exp(-1.0 / (0.005 * sr_));
         const double rmsA = 1.0 - std::exp(-1.0 / (0.3 * sr_));
         const double carA = 1.0 - std::exp(-1.0 / (0.03 * sr_));
+        const double fillA = 1.0 - std::exp(-1.0 / (0.06 * sr_));
         for (int i = 0; i < n; ++i) {
             bend_ += (bendTarget_ - bend_) * bendA;
             const double bendMul = std::pow(2.0, bend_ * p_.bendRange / 12.0);
@@ -231,7 +237,18 @@ private:
                     const double gk = 1.0 / std::pow(k + 1.0, 0.3);
                     S -= e * v.collapse[(size_t)k].run((float)S);
                     const double c = v.car[(size_t)k].run((float)(sL ? xs * srcNorm : noise));
-                    carrierMid += c * p_.carrier * depth * e * gk;
+                    double fill = 1.0;
+                    if (p_.fillGaps && !sL) {
+                        // compare the track's own sound in this band with what the carrier would add there; noise
+                        // only makes up the shortfall (a dense mix needs almost none, a sparse track gets it)
+                        const double o = v.own[(size_t)k].run((float)M);
+                        v.ownMs[(size_t)k] += (o * o - v.ownMs[(size_t)k]) * fillA;
+                        v.carMs[(size_t)k] += (c * c - v.carMs[(size_t)k]) * fillA;
+                        const double want = std::clamp(1.0 - std::sqrt(v.ownMs[(size_t)k] / (v.carMs[(size_t)k] + 1e-20)), 0.0, 1.0);
+                        v.fill[(size_t)k] += (want - v.fill[(size_t)k]) * fillA;
+                        fill = v.fill[(size_t)k];
+                    }
+                    carrierMid += c * p_.carrier * depth * e * gk * fill;
                 }
             }
             // cap the total carrier at Carrier x the track's level however many notes overlap (a single note sits
