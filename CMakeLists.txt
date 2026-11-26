@@ -65,7 +65,7 @@ FetchContent_Declare(JUCE
 FetchContent_MakeAvailable(JUCE)
 
 juce_add_plugin(AlignMalign
-  COMPANY_NAME "What Iph Media"
+  COMPANY_NAME "KracKill$"
   COMPANY_WEBSITE "https://www.krackills.com"
   BUNDLE_ID com.whatiphmedia.alignmalign
   PLUGIN_MANUFACTURER_CODE Wiph
