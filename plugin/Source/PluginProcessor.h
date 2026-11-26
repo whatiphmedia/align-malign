@@ -76,6 +76,7 @@ private:
     float lastKnob_ = 99.f, lastMatch_ = -1.f;
     int lastFlavour_ = -1;
     bool lastMotionOn_ = false;
+    float lastFAmt_ = -1.f, lastPMono_ = -1.f, lastSRot_ = -999.f;
 
     // linked-instance parameter following (message thread)
     uint64_t linkSeqSeen_ = 0;
@@ -83,7 +84,7 @@ private:
     bool applyingLinked_ = false, adopted_ = false;
 
     // meters + spectrum for the UI (written by the audio thread)
-    std::atomic<float> inLevel_{0.f}, outLevel_{0.f};
+    std::atomic<float> inLevel_{0.f}, outLevel_{0.f}, inPeakHold_{0.f}, outPeakHold_{0.f};
     static constexpr int kScope = 2048;
     std::array<float, kScope> scopeRing_{};
     std::atomic<int> scopeWrite_{0};
@@ -91,7 +92,7 @@ private:
     juce::AudioParameterFloat *pAlign_, *pMatch_, *pWidth_, *pMotion_, *pMix_;
     juce::AudioParameterChoice* pFlavour_;
     juce::AudioParameterBool *pAB_, *pDelta_, *pLatAuto_;
-    juce::AudioParameterFloat *pLatMs_, *pLinkId_;
+    juce::AudioParameterFloat *pLatMs_, *pLinkId_, *pFAmt_ = nullptr, *pPMono_ = nullptr, *pSRot_ = nullptr;
     int linkId_ = 0;                                   // identifies this instance to the Live control surface
     juce::String latSource_ = "none", latTrack_, msg_; // shown on the Pro page
     double latUsedMs_ = 0;

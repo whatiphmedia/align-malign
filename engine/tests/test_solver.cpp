@@ -50,6 +50,50 @@ int main() {
     }
     std::printf("kick in + kick out, 40-200 Hz: %+.2f dB\n", 10 * std::log10(after / before));
     check(10 * std::log10(after / before) > 2.0, "a delayed second mic of the same kick is still aligned");
+
+    // ---- Pro page controls
+    {   // band: nothing rotated outside lowest..highest
+        SolveSettings st; st.loHz = 80; st.hiHz = 300;
+        const auto pb = solve(cs, autoAnchor(cs), profilesFor(st).aS);
+        double outside = 0;
+        for (int t = 0; t < 4; ++t) for (int k = 1; k < cs.K; ++k) { const double f = k * cs.binHz; if (f < 79 || f > 450) outside = std::max(outside, (double)std::fabs(pb[t][k])); }
+        check(outside < 1e-6, "nothing is rotated outside the chosen frequency band");
+    }
+    {   // anchor: the chosen track is never changed
+        SolveSettings st;
+        const auto pa = solve(cs, 1, profilesFor(st).aS);
+        double mx = 0; for (float v : pa[1]) mx = std::max(mx, (double)std::fabs(v));
+        double other = 0; for (float v : pa[0]) other = std::max(other, (double)std::fabs(v));
+        check(mx < 1e-6 && other > 0.1, "the anchor track stays as recorded while the others move to it");
+    }
+    {   // never make it worse: the guarded result never loses mix energy anywhere, the unguarded one can be checked against it
+        SolveSettings st; st.guard = getenv("NOGUARD") ? false : true; st.stiffness = 0.0;     // no pull: the most aggressive solve
+        const auto pg = solve(cs, autoAnchor(cs), profilesFor(st).aS);
+        int worse = 0;
+        for (int k = 1; k < cs.K; ++k) {
+            double e0 = 0, e1 = 0;
+            for (int i = 0; i < 4; ++i) for (int j = i + 1; j < 4; ++j) { const cplx c = cs.at(i, j, k); e0 += c.real(); e1 += (c * std::polar(1.0, (double)pg[i][k] - pg[j][k])).real(); }
+            double own = 0; for (int i = 0; i < 4; ++i) own += cs.at(i, i, k).real();
+            if (e1 < e0 - 0.02 * own) ++worse;                   // a clear loss (2% of the bins' energy)
+        }
+        std::printf("bins clearly worse with the guard on: %d of %d\n", worse, cs.K);
+        check(worse == 0, "never make it worse: no bin loses mix energy");
+    }
+    {   // flavour amount 0 = the malign side does nothing; phase mono below keeps side = mid; side rotation turns the side
+        Maps mp; mp.K = cs.K; mp.binHz = cs.binHz; mp.alignStd = m; mp.malignStd = m; mp.alignExt = m; mp.malignExt = m;
+        Controls c; c.knob = 1.0; c.flavour = Flavour::Phantom; c.flavourAmt = 0.0;
+        auto pc = effectivePhase(mp, 0, c);
+        double mx = 0; for (size_t k = 0; k < pc.mid.size(); ++k) mx = std::max({ mx, (double)std::fabs(pc.mid[k]), (double)std::fabs(pc.side[k]) });
+        check(mx < 1e-6, "flavour amount 0 leaves the malign side neutral");
+        c.flavourAmt = 1.0; c.monoBelowHz = 150; c.sideRotRad = M_PI / 4;
+        pc = effectivePhase(mp, 0, c);
+        double lowDiff = 0, highRot = 0; int nh = 0;
+        for (size_t k = 1; k < pc.mid.size(); ++k) { const double f = k * cs.binHz, d = std::remainder((double)pc.side[k] - pc.mid[k], 2 * M_PI);
+            if (f < 140) lowDiff = std::max(lowDiff, std::fabs(d));
+            if (f > 600 && f < 1500) { highRot += d; ++nh; } }
+        check(lowDiff < 1e-5, "phase mono below: the side keeps the mid's phase in the low end");
+        check(nh > 0 && std::fabs(highRot / nh - (M_PI / 4 + M_PI / 2)) < 0.05, "side rotation adds to the flavour's side turn above the mono point");
+    }
     std::printf(fails ? "%d FAILED\n" : "all checks passed\n", fails);
     return fails ? 1 : 0;
 }

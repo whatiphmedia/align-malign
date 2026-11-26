@@ -56,6 +56,21 @@
   pf('latMs').on = v => send('latMs', v);
   pf('installLive').on = () => act('installLive');
 
+  // Pro page: per-copy controls (linked like the macros in Session scope) and the session-wide analysis settings
+  const PF = k => { for (const sec of PRO) for (const f of (sec.fields || [])) if (f.k === k) return f; return null; };
+  for (const k of ['famt', 'pmono', 'srot']) PF(k).on = v => send(k, v);
+  for (const k of ['loHz', 'hiHz', 'smooth', 'stiff', 'guard']) PF(k).on = v => send(k, v);
+  let anchorIds = [-1];                                   // select index -> track id (-1 = automatic)
+  PF('anchor').on = v => send('anchor', anchorIds[v] ?? -1);
+  // reflect a value into a Pro field (and its control, if that section is on screen)
+  const showField = (k, v) => {
+    const f = PF(k); if (!f || fresh(k)) return;
+    const el = document.getElementById('pf-' + k);
+    if (f.t === 'range') { if (Math.abs(f.v - v) < 1e-6) return; f.v = v; if (el && document.activeElement !== el) { el.value = v; el.dispatchEvent(new Event('input')); } }
+    else if (f.t === 'select') { if (f.v === v) return; f.v = v; if (el) el.value = v; }
+    else { if (f.v === !!v) return; f.v = !!v; if (el) el.checked = !!v; }
+  };
+
   // Learn: one button in the status bar drives the whole session
   const learn = document.getElementById('learn');
   learn.addEventListener('click', () => act('learn'));
@@ -102,6 +117,24 @@
       if (rg && !fresh('latMs') && document.activeElement !== rg) { rg.value = lm.v; rg.dispatchEvent(new Event('input')); }
       if (s.msg && s.msg !== lastMsg) { lastMsg = s.msg; toast(s.msgOk ? 'ok' : 'warn', s.msg); }
 
+      // Pro page values
+      for (const k of ['famt', 'pmono', 'srot']) if (k in s) showField(k, s[k]);
+      if (s.analysis) {
+        const a = s.analysis;
+        showField('loHz', a.loHz); showField('hiHz', a.hiHz); showField('smooth', a.smooth);
+        showField('stiff', a.stiff); showField('guard', a.guard);
+        // anchor choices: Auto + every track Learn listens to
+        const list = (s.tracks || []).filter(t => !t.excluded);
+        const ids = [-1, ...list.map(t => t.id)], opts = ['Auto (loudest low end)', ...list.map(t => t.name || 'Track')];
+        const f = PF('anchor'), el = document.getElementById('pf-anchor');
+        if (JSON.stringify(opts) !== JSON.stringify(f.opts) || JSON.stringify(ids) !== JSON.stringify(anchorIds)) {
+          f.opts = opts; anchorIds = ids;
+          if (el) { el.textContent = ''; opts.forEach((o, i) => { const op = document.createElement('option'); op.value = i; op.textContent = o; el.appendChild(op); }); }
+        }
+        const idx = Math.max(0, ids.indexOf(a.anchor));
+        if (!fresh('anchor')) { f.v = idx; if (el) el.value = idx; }
+      }
+
       // Groups: every linked Auto Malign, named by the host; a chip press sets that track's group
       if (Array.isArray(s.tracks)) {
         const tb = document.getElementById('groupsTable');
@@ -114,6 +147,8 @@
 
       // the scene and meters follow the real output
       AU.ext = 1; AU.extT = performance.now(); AU.extB = s.bands || []; AU.extL = s.level || 0;
+      const toMeter = db => Math.max(0, Math.min(1, (db + 60) / 60));         // -60..0 dBFS
+      if ('inDb' in s) { AU.extIn = toMeter(s.inDb); AU.extOut = toMeter(s.outDb); }
 
       // session status
       learn.setAttribute('aria-pressed', s.learning ? 'true' : 'false');

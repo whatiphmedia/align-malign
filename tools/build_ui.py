@@ -4,8 +4,7 @@
     python3 tools/build_ui.py
 
 Changes made for the plugin build (interface.html keeps working in a normal browser):
-  - the scene and meters read the plugin's real output level/spectrum when the bridge feeds them (AU.ext)
-  - the demo-only controls (Load audio, Sweep) are hidden; a Learn button is added to the status bar
+  - the demo-only controls (Load audio, Sweep, frame-time readout) are hidden; a Learn button is added to the status bar
   - bridge.js is appended at the end of the page
 """
 import pathlib, sys
@@ -22,9 +21,6 @@ def rep(s, a, b):
 
 
 s = src
-# 1. external level/spectrum feed for the scene
-s = rep(s, "function audioTick(t){const B=AU.bands;\n  if(AU.an&&AU.el&&!AU.el.paused){",
-        "function audioTick(t){const B=AU.bands;\n  if(AU.ext&&performance.now()-AU.extT<600){for(let l=0;l<NL;l++)B[l]=AU.extB[l]||0;AU.level=AU.extL;}\n  else if(AU.an&&AU.el&&!AU.el.paused){")
 # 2. Learn button (hidden outside the plugin)
 s = rep(s, '<button id="sweep" aria-pressed="false"',
         '<button id="learn" class="plugin-only" aria-pressed="false" title="Play the song with Auto Malign on every track; press again to solve">Learn</button><button id="sweep" aria-pressed="false"')

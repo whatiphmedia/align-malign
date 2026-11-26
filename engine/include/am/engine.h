@@ -85,7 +85,36 @@ struct Profile {
     double smoothOct = 1.0 / 6.0; // cross-spectra are averaged over this bandwidth before solving (statistics + continuity)
     double maxGdMs = 10.0;   // the correction may never move any frequency by more than this in time
     bool anti = false;       // false = align (max energy), true = malign (min energy)
+    bool guard = false;      // align only: wherever the final correction would not add to the mix, fade it back to 0
 };
+
+// Session-wide analysis settings (Pro page > Alignment), shared by every copy: one Learn, one solve.
+struct SolveSettings {
+    double loHz = 2.7, hiHz = 1000.0;  // band the alignment works in
+    int smoothIdx = 2;                 // 0..4 = 1/24, 1/12, 1/6, 1/3, 1/2 octave
+    double stiffness = 0.5;            // 0..1; 0.5 = the default pull
+    bool guard = true;                 // "never make it worse"
+    int anchorId = -1;                 // slot id of the anchor track; -1 = automatic
+    bool operator==(const SolveSettings& o) const {
+        return loHz == o.loHz && hiHz == o.hiHz && smoothIdx == o.smoothIdx && stiffness == o.stiffness && guard == o.guard && anchorId == o.anchorId;
+    }
+    double smoothOct() const { static const double v[] = { 1.0 / 24, 1.0 / 12, 1.0 / 6, 1.0 / 3, 1.0 / 2 }; return v[std::clamp(smoothIdx, 0, 4)]; }
+};
+
+// The four solve profiles for a set of session settings.
+struct ProfileSet { Profile aS, mS, aE, mE; };
+inline ProfileSet profilesFor(const SolveSettings& st) {
+    const double k = std::clamp(st.stiffness, 0.0, 1.0) / 0.5;     // 0..2 x the default pull
+    const double lo = std::clamp(st.loHz, 2.7, 200.0), hi = std::clamp(st.hiHz, std::max(lo * 2, 200.0), 4000.0);
+    ProfileSet p;
+    p.aS.fLo = lo; p.aS.fHi = hi; p.aS.fTaper = std::min(4400.0, hi * 1.5); p.aS.pull = 0.5 * k; p.aS.guard = st.guard;
+    p.mS = p.aS; p.mS.anti = true; p.mS.guard = false; p.mS.pull = 0.15 * k;
+    p.mS.fHi = std::min(4000.0, hi * 1.5); p.mS.fTaper = std::min(4400.0, p.mS.fHi * 1.47);
+    p.aE = p.aS; p.aE.fHi = 4000; p.aE.fTaper = 4400; p.aE.pull = 0.3 * k; p.aE.maxGdMs = 15.0;
+    p.mE = p.aE; p.mE.anti = true; p.mE.guard = false; p.mE.pull = 0.1 * k;
+    for (Profile* q : { &p.aS, &p.mS, &p.aE, &p.mE }) q->smoothOct = st.smoothOct();
+    return p;
+}
 
 inline Profile alignStandard() { return {}; }
 inline Profile malignStandard() { Profile p; p.anti = true; p.fHi = 1500; p.fTaper = 2200; p.pull = 0.15; return p; }
@@ -139,7 +168,7 @@ inline CrossSpectra groupSpectra(const CrossSpectra& cs, const std::vector<int>&
 //  - Every track is pulled towards its recorded phase, so it only moves where that clearly pays.
 //  - Bins are solved low to high, each starting from the previous bin's answer, so the result is continuous.
 //  - The result is unwrapped, smoothed, and its slope (= time shift per frequency) is capped at maxGdMs.
-inline std::vector<std::vector<float>> solve(const CrossSpectra& cs, int /*anchor*/, const Profile& p, int sweeps = 8) {
+inline std::vector<std::vector<float>> solve(const CrossSpectra& cs, int anchor, const Profile& p, int sweeps = 8) {
     const int T = cs.T, K = cs.K;
     std::vector<std::vector<float>> out(T, std::vector<float>(K, 0.f));
     if (T < 2 || cs.frames == 0 || K < 4) return out;
@@ -182,7 +211,7 @@ inline std::vector<std::vector<float>> solve(const CrossSpectra& cs, int /*ancho
             }
         for (int s = 0; s < sweeps; ++s)                                         // warm start: th from bin k-1
             for (int i = 0; i < T; ++i) {
-                if (own[i] <= 0) { th[i] = 0; continue; }
+                if (own[i] <= 0 || i == anchor) { th[i] = 0; continue; }   // the anchor track is never changed
                 cplx si(0, 0);
                 for (int j = 0; j < T; ++j)
                     if (j != i) si += Cs[(size_t)i * T + j] * std::polar(1.0, -th[j]);
@@ -212,6 +241,40 @@ inline std::vector<std::vector<float>> solve(const CrossSpectra& cs, int /*ancho
             out[t][k] = (float)(cur * taperWeight(p, k * cs.binHz));
         }
     }
+
+    // 3) never make it worse (align): where the correction would not add energy to the mix, fade it back to the
+    //    sound as recorded. Checked on the faded result itself (a half-way rotation can be worse than either end),
+    //    a few rounds, so the fades never create a loss of their own.
+    if (p.guard && !p.anti) {
+        const std::vector<std::vector<float>> full = out;
+        std::vector<double> keep(K, 1.0);
+        auto energyGain = [&](const std::vector<std::vector<float>>& ph, int k) {   // smoothed mix energy change at bin k
+            int lo, hi; win(k, lo, hi);
+            double e0 = 0, e1 = 0;
+            for (int i = 0; i < T; ++i)
+                for (int j = i + 1; j < T; ++j) {
+                    const cplx c = pre[pid(i, j)][hi + 1] - pre[pid(i, j)][lo];
+                    e0 += c.real();
+                    e1 += (c * std::polar(1.0, (double)ph[i][k] - ph[j][k])).real();
+                }
+            return e1 - e0;
+        };
+        for (int round = 0; round < 6; ++round) {
+            bool changed = false;
+            for (int k = 1; k < K; ++k)
+                if (keep[k] > 0 && energyGain(out, k) < 0) { keep[k] = 0; changed = true; }
+            if (round > 0 && !changed) break;
+            // allowed size of the correction: zero at every lossy bin, growing no faster than the time-shift cap
+            // away from it (both directions), so the result is exactly as recorded there and stays within the cap
+            std::vector<double> bound(K, 1e9);
+            double d = 1e9;
+            for (int k = 1; k < K; ++k) { d = keep[k] > 0 ? d + maxStep : 0.0; bound[k] = d; }
+            d = 1e9;
+            for (int k = K - 1; k >= 1; --k) { d = keep[k] > 0 ? d + maxStep : 0.0; bound[k] = std::min(bound[k], d); }
+            for (int t = 0; t < T; ++t)
+                for (int k = 1; k < K; ++k) out[t][k] = (float)std::clamp((double)full[t][k], -bound[k], bound[k]);
+        }
+    }
     return out;
 }
 
@@ -230,13 +293,29 @@ struct Maps { // solved per-track phase maps for one session solve
     int K = 0;
 };
 
+struct PhaseCurves { std::vector<float> mid, side; }; // per solve bin
+
 struct Controls {
     double knob = 0.0;     // -1 = full align, 0 = neutral (as recorded), +1 = full malign
     Flavour flavour = Flavour::Fuse;
     uint32_t seed = 1;     // per-track seed for Disperse
+    double flavourAmt = 1.0;   // depth of the malign flavours (Pro > Flavour > Amount)
+    double monoBelowHz = 0.0;  // below this the side keeps the mid's phase (0 = off)
+    double sideRotRad = 0.0;   // extra rotation of the side above the mono point
 };
 
-struct PhaseCurves { std::vector<float> mid, side; }; // per solve bin
+// Stereo controls on top of a phase pair: mono-safe low end, then a side rotation above it.
+inline void applyStereo(PhaseCurves& pc, double binHz, const Controls& c) {
+    if (c.monoBelowHz <= 0 && c.sideRotRad == 0) return;
+    for (size_t k = 0; k < pc.side.size(); ++k) {
+        const double f = k * binHz;
+        // 0 below the mono point, 1 a third of an octave above it
+        const double w = c.monoBelowHz <= 0 ? 1.0 : std::clamp(std::log2(std::max(f, 1e-3) / c.monoBelowHz) * 3.0, 0.0, 1.0);
+        const double side = pc.mid[k] + w * (std::remainder((double)pc.side[k] - pc.mid[k], 2 * M_PI) + c.sideRotRad);
+        pc.side[k] = (float)std::remainder(side, 2 * M_PI);
+    }
+}
+
 
 // Align side always runs the standard alignment. The flavour decides what the malign side does.
 inline PhaseCurves effectivePhase(const Maps& m, int track, const Controls& c) {
@@ -247,9 +326,10 @@ inline PhaseCurves effectivePhase(const Maps& m, int track, const Controls& c) {
     const double a = std::clamp(c.knob, -1.0, 1.0);
     if (a <= 0) { // align
         for (int k = 0; k < m.K; ++k) pc.mid[k] = pc.side[k] = (float)(-a * m.alignStd[track][k]);
+        applyStereo(pc, m.binHz, c);
         return pc;
     }
-    const double amt = a;
+    const double amt = a * std::clamp(c.flavourAmt, 0.0, 1.0);
     auto bandW = [](double f, double lo, double hi) { // soft band window on log f
         if (f <= 0) return 0.0;
         const double e = 0.25; // octaves of fade
@@ -282,6 +362,7 @@ inline PhaseCurves effectivePhase(const Maps& m, int track, const Controls& c) {
         pc.mid[k] = (float)std::remainder(mid, 2 * M_PI);
         pc.side[k] = (float)std::remainder(side, 2 * M_PI);
     }
+    applyStereo(pc, m.binHz, c);
     return pc;
 }
 

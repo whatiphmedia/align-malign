@@ -98,9 +98,9 @@ private:
     double lastPacket_ = -1e9;
 };
 
-const char* kLinked[] = { "alignment", "match", "width", "motion", "mix", "flavour", "ab", "delta" };
+const char* kLinked[] = { "alignment", "match", "width", "motion", "mix", "flavour", "ab", "delta", "famt", "pmono", "srot" };
 // what a group shares even outside Session scope: everything that shapes the phase correction
-bool groupLinked(const juce::String& id) { return id == "alignment" || id == "flavour" || id == "motion" || id == "match"; }
+bool groupLinked(const juce::String& id) { return id == "alignment" || id == "flavour" || id == "motion" || id == "match" || id == "famt" || id == "pmono" || id == "srot"; }
 
 juce::String floatsToBase64(const std::vector<float>& v) {
     juce::MemoryBlock mb(v.data(), v.size() * sizeof(float));
@@ -133,6 +133,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout AlignMalignProcessor::create
     l.add(std::make_unique<AudioParameterChoice>(ParameterID{ "flavour", 1 }, "Flavour", flavourNames(), 0));
     l.add(std::make_unique<AudioParameterBool>(ParameterID{ "ab", 1 }, "A/B (hear original)", false));
     l.add(std::make_unique<AudioParameterBool>(ParameterID{ "delta", 1 }, "Delta", false));
+    // Pro page: flavour depth and the side signal
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "famt", 1 }, "Flavour amount", NormalisableRange<float>(0.f, 1.f), 1.f));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "pmono", 1 }, "Phase mono below", NormalisableRange<float>(0.f, 400.f, 1.f), 0.f,
+                                                AudioParameterFloatAttributes().withLabel("Hz")));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "srot", 1 }, "Side rotation", NormalisableRange<float>(-180.f, 180.f, 1.f), 0.f,
+                                                AudioParameterFloatAttributes().withLabel("deg")));
     // Latency in front of this instance (synths/plugins before it on the track): read from Live, or typed in.
     l.add(std::make_unique<AudioParameterBool>(ParameterID{ "latauto", 1 }, "Latency before: from Live", true));
     l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "latms", 1 }, "Latency before (manual)",
@@ -156,6 +162,10 @@ AlignMalignProcessor::AlignMalignProcessor()
     pFlavour_ = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("flavour"));
     pAB_ = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("ab"));
     pDelta_ = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("delta"));
+    pFAmt_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("famt"));
+    pPMono_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("pmono"));
+    pSRot_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("srot"));
+    jassert(pFAmt_ && pPMono_ && pSRot_);
     pLatAuto_ = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("latauto"));
     pLatMs_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("latms"));
     pLinkId_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("linkid"));
@@ -242,7 +252,7 @@ void AlignMalignProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     const bool ghost = pFlavour_->getIndex() == 2;
     const bool ab = pAB_->get(), delta = pDelta_->get();
     const int maxBlock = mid_.getNumSamples();
-    float inPeak = 0.f, outSq = 0.f;
+    float inPeak = 0.f, outSq = 0.f, outPeak = 0.f;
 
     for (int off = 0; off < total; off += maxBlock) {
         const int n = juce::jmin(maxBlock, total - off);
@@ -299,6 +309,7 @@ void AlignMalignProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
             L[i] = om + os;
             if (R) R[i] = om - os;
             outSq += om * om;
+            outPeak = juce::jmax(outPeak, std::abs(L[i]), R ? std::abs(R[i]) : 0.f);
             const int w = scopeWrite_.load(std::memory_order_relaxed);
             scopeRing_[(size_t)w] = om;
             scopeWrite_.store((w + 1) % kScope, std::memory_order_relaxed);
@@ -306,6 +317,11 @@ void AlignMalignProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         ppq += n * ppqPerSample;
     }
     inLevel_.store(inPeak);
+    for (auto* h : { &inPeakHold_, &outPeakHold_ }) {          // hold the highest peak until the window reads it
+        const float v = h == &inPeakHold_ ? inPeak : outPeak;
+        float cur = h->load(std::memory_order_relaxed);
+        while (v > cur && !h->compare_exchange_weak(cur, v, std::memory_order_relaxed)) {}
+    }
     outLevel_.store(std::sqrt(outSq / (float)total));
 }
 
@@ -335,7 +351,13 @@ void AlignMalignProcessor::timerCallback() {
     const float match = pMatch_->get();
     const int flav = pFlavour_->getIndex();
     const bool motionOn = pMotion_->get() > 0.001f;
-    if (std::abs(knob - lastKnob_) > 1e-4f || std::abs(match - lastMatch_) > 1e-4f || flav != lastFlavour_ || motionOn != lastMotionOn_) {
+    const float famt = pFAmt_->get(), pmono = pPMono_->get(), srot = pSRot_->get();
+    if (std::abs(knob - lastKnob_) > 1e-4f || std::abs(match - lastMatch_) > 1e-4f || flav != lastFlavour_ || motionOn != lastMotionOn_
+        || famt != lastFAmt_ || pmono != lastPMono_ || srot != lastSRot_) {
+        slot_->controls.flavourAmt = famt;
+        slot_->controls.monoBelowHz = pmono;
+        slot_->controls.sideRotDeg = srot;
+        lastFAmt_ = famt; lastPMono_ = pmono; lastSRot_ = srot;
         slot_->controls.knob = knob;
         slot_->controls.match = match;
         slot_->controls.flavour = flav;
@@ -381,7 +403,20 @@ void AlignMalignProcessor::timerCallback() {
 }
 
 void AlignMalignProcessor::setParamFromUI(const juce::String& id, const juce::var& value) {
-    if (id == "scope") { scope_ = value.toString(); return; }
+    if (id == "scope") { scope_ = value.toString() == "session" ? "session" : "track"; return; }
+    // session-wide analysis settings (one Learn, one solve): stored on the bus, every window shows them
+    if (id == "loHz" || id == "hiHz" || id == "smooth" || id == "stiff" || id == "guard" || id == "anchor") {
+        auto& bus = am::SessionBus::get();
+        auto st = bus.settings();
+        if (id == "loHz") st.loHz = (double)value;
+        else if (id == "hiHz") st.hiHz = (double)value;
+        else if (id == "smooth") st.smoothIdx = (int)value;
+        else if (id == "stiff") st.stiffness = (double)value;
+        else if (id == "guard") st.guard = (bool)value;
+        else st.anchorId = (int)value;
+        bus.setSettings(st);
+        return;
+    }
     if (id == "latAuto") { pLatAuto_->setValueNotifyingHost((bool)value ? 1.f : 0.f); return; }
     if (id == "latMs") { pLatMs_->setValueNotifyingHost(pLatMs_->convertTo0to1((float)(double)value)); return; }
     auto* p = apvts.getParameter(id);
@@ -389,7 +424,7 @@ void AlignMalignProcessor::setParamFromUI(const juce::String& id, const juce::va
     float norm = 0.f;
     if (id == "flavour") norm = p->convertTo0to1((float)juce::jmax(0, flavourNames().indexOf(value.toString())));
     else if (id == "ab" || id == "delta") norm = (bool)value ? 1.f : 0.f;
-    else if (id == "alignment") norm = p->convertTo0to1((float)(double)value);
+    else if (auto* pf = dynamic_cast<juce::AudioParameterFloat*>(p)) norm = pf->convertTo0to1(juce::jlimit(pf->range.start, pf->range.end, (float)(double)value));
     else norm = juce::jlimit(0.f, 1.f, (float)(double)value);
     if (std::abs(p->getValue() - norm) > 1e-6f) {
         p->beginChangeGesture();
@@ -438,6 +473,23 @@ juce::var AlignMalignProcessor::makeUIState() {
     }
     o->setProperty("names", names);
     o->setProperty("tracks", tracks);
+    o->setProperty("famt", pFAmt_->get());
+    o->setProperty("pmono", pPMono_->get());
+    o->setProperty("srot", pSRot_->get());
+    {
+        const auto st = am::SessionBus::get().settings();
+        auto* a = new juce::DynamicObject();
+        a->setProperty("loHz", st.loHz);
+        a->setProperty("hiHz", st.hiHz);
+        a->setProperty("smooth", st.smoothIdx);
+        a->setProperty("stiff", st.stiffness);
+        a->setProperty("guard", st.guard);
+        a->setProperty("anchor", st.anchorId);
+        o->setProperty("analysis", juce::var(a));
+    }
+    // meters: peaks since the last update, in dBFS
+    o->setProperty("inDb", juce::Decibels::gainToDecibels(inPeakHold_.exchange(0.f), -100.f));
+    o->setProperty("outDb", juce::Decibels::gainToDecibels(outPeakHold_.exchange(0.f), -100.f));
     o->setProperty("latAuto", pLatAuto_->get());
     o->setProperty("latMs", pLatMs_->get());
     o->setProperty("latSource", latSource_);
@@ -467,6 +519,15 @@ void AlignMalignProcessor::getStateInformation(juce::MemoryBlock& dest) {
     state.setProperty("scope", scope_, nullptr);
     state.setProperty("track", trackName_, nullptr);
     state.setProperty("group", juce::String(am::SessionBus::get().group(slot_)), nullptr);
+    {   // the session's analysis settings travel with every copy; the anchor is remembered by the copy that is it
+        const auto st = am::SessionBus::get().settings();
+        state.setProperty("aLo", st.loHz, nullptr);
+        state.setProperty("aHi", st.hiHz, nullptr);
+        state.setProperty("aSmooth", st.smoothIdx, nullptr);
+        state.setProperty("aStiff", st.stiffness, nullptr);
+        state.setProperty("aGuard", st.guard, nullptr);
+        state.setProperty("aIsAnchor", st.anchorId == slot_->id(), nullptr);
+    }
     am::Maps maps;
     std::vector<float> match;
     am::SessionBus::get().snapshot(slot_, maps, match);
@@ -489,10 +550,21 @@ void AlignMalignProcessor::setStateInformation(const void* data, int size) {
     if (xml == nullptr) return;
     auto state = juce::ValueTree::fromXml(*xml);
     if (!state.isValid()) return;
-    scope_ = state.getProperty("scope", "session").toString();
+    scope_ = state.getProperty("scope", "session").toString() == "session" ? "session" : "track";   // old Bus/Master = this track
     trackName_ = state.getProperty("track", trackName_).toString();
     am::SessionBus::get().setName(slot_, trackName_.toStdString());
     setGroup(slot_->id(), state.getProperty("group", "").toString());
+    if (state.hasProperty("aLo")) {
+        auto& bus = am::SessionBus::get();
+        auto st = bus.settings();
+        st.loHz = (double)state.getProperty("aLo");
+        st.hiHz = (double)state.getProperty("aHi");
+        st.smoothIdx = (int)state.getProperty("aSmooth");
+        st.stiffness = (double)state.getProperty("aStiff");
+        st.guard = (bool)state.getProperty("aGuard");
+        if ((bool)state.getProperty("aIsAnchor", false)) st.anchorId = slot_->id();
+        bus.setSettings(st);
+    }
     auto mt = state.getChildWithName("Maps");
     if (mt.isValid()) {
         am::Maps maps;

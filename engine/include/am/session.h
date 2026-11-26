@@ -33,6 +33,9 @@ struct IRSet {                                   // what a slot convolves with
 
 struct SlotControls {                            // written from the message thread, read by the worker
     std::atomic<float> knob{0.f};                // -1 align .. +1 malign
+    std::atomic<float> flavourAmt{1.f};          // 0..1
+    std::atomic<float> monoBelowHz{0.f};         // 0 = off
+    std::atomic<float> sideRotDeg{0.f};
     std::atomic<int> flavour{0};
     std::atomic<float> match{1.f};               // 0..1
     std::atomic<bool> motionOn{false};
@@ -172,6 +175,16 @@ public:
     }
     bool learning() const { return learning_.load(); }
 
+    // Session-wide analysis settings: a change re-solves from what Learn already heard.
+    void setSettings(const SolveSettings& st) {
+        std::lock_guard<std::mutex> g(m_);
+        if (st == settings_) return;
+        settings_ = st;
+        solveRequested_ = true;
+        cv_.notify_all();
+    }
+    SolveSettings settings() const { std::lock_guard<std::mutex> g(m_); return settings_; }
+
     void controlsChanged() { std::lock_guard<std::mutex> g(m_); dirty_ = true; cv_.notify_all(); }
     void requestSolve() { std::lock_guard<std::mutex> g(m_); solveRequested_ = true; cv_.notify_all(); }
 
@@ -285,6 +298,9 @@ private:
             const auto order = order_;
             std::vector<std::string> groups;
             for (auto& sl : order) groups.push_back(sl->group);
+            const SolveSettings settings = settings_;
+            int anchorIdx = -1;                             // the chosen anchor's place in this Learn, if it is in it
+            for (size_t t = 0; t < order.size(); ++t) if (order[t]->id() == settings.anchorId) anchorIdx = (int)t;
             bool solveNow = false;
             lk.unlock();
 
@@ -324,7 +340,7 @@ private:
             // 2) solve (no lock held), then hand the maps to the slots
             if (solveNow && cs_.frames > 0 && cs_.T >= 2) {
                 lk.unlock();
-                SolveResult r = computeSolve(groups);
+                SolveResult r = computeSolve(groups, settings, anchorIdx);
                 lk.lock();
                 if (seenGen == accGen_) { applySolveLocked(r); dirty_ = true; }
             }
@@ -336,7 +352,7 @@ private:
 
     struct SolveResult { int anchor = 0; std::vector<std::vector<float>> aS, mS, aE, mE; double binHz = 0; int K = 0; };
 
-    SolveResult computeSolve(const std::vector<std::string>& groups) const {
+    SolveResult computeSolve(const std::vector<std::string>& groups, const SolveSettings& settings, int anchorIdx) const {
         // one variable per group, one per ungrouped track
         std::vector<int> varOf(groups.size());
         std::vector<std::string> names;
@@ -361,11 +377,12 @@ private:
             return r;
         }
         const CrossSpectra g = (V == (int)groups.size()) ? cs_ : groupSpectra(cs_, varOf, V);
-        const int a = autoAnchor(g);
-        r.aS = expand(solve(g, a, alignStandard()));
-        r.mS = expand(solve(g, a, malignStandard()));
-        r.aE = expand(solve(g, a, alignExtended()));
-        r.mE = expand(solve(g, a, malignExtended()));
+        const int a = anchorIdx >= 0 ? varOf[(size_t)anchorIdx] : autoAnchor(g);
+        const ProfileSet ps = profilesFor(settings);
+        r.aS = expand(solve(g, a, ps.aS));
+        r.mS = expand(solve(g, a, ps.mS));
+        r.aE = expand(solve(g, a, ps.aE));
+        r.mE = expand(solve(g, a, ps.mE));
         r.anchor = (int)(std::find(varOf.begin(), varOf.end(), a) - varOf.begin());
         return r;
     }
@@ -395,7 +412,7 @@ private:
                 m.K = K; m.binHz = binHz;
                 m.alignStd = m.malignStd = m.alignExt = m.malignExt = {std::vector<float>(K, 0.f)};
             }
-            Controls c; c.knob = s->controls.knob.load(); c.flavour = (Flavour)s->controls.flavour.load(); c.seed = seedOf(*s);
+            Controls c = controlsOf(*s, s->controls.knob.load());
             curves[t] = effectivePhase(m, 0, c);
             mids.push_back(curves[t].mid);
         }
@@ -418,7 +435,7 @@ private:
                 Maps m = s->ownMaps;
                 if (out) m.K = -1;
                 if (m.K != K) { m.K = K; m.binHz = binHz; m.alignStd = m.malignStd = m.alignExt = m.malignExt = {std::vector<float>(K, 0.f)}; }
-                Controls c; c.knob = -s->controls.knob.load(); c.flavour = (Flavour)s->controls.flavour.load(); c.seed = seedOf(*s);
+                Controls c = controlsOf(*s, -s->controls.knob.load());
                 const PhaseCurves mc = effectivePhase(m, 0, c);
                 set->midMirror = buildIR(mc.mid, g, binHz, sr_, amt);
                 set->sideMirror = buildIR(mc.side, g, binHz, sr_, amt);
@@ -433,6 +450,17 @@ private:
     }
 
     // Group members share the flavour's random pattern too, so they stay identical to each other at any setting.
+    static Controls controlsOf(const Slot& s, float knob) {
+        Controls c;
+        c.knob = knob;
+        c.flavour = (Flavour)s.controls.flavour.load();
+        c.seed = seedOf(s);
+        c.flavourAmt = s.controls.flavourAmt.load();
+        c.monoBelowHz = s.controls.monoBelowHz.load();
+        c.sideRotRad = s.controls.sideRotDeg.load() * M_PI / 180.0;
+        return c;
+    }
+
     static uint32_t seedOf(const Slot& s) {
         if (s.group.empty()) return (uint32_t)s.id() + 1;
         uint32_t h = 2166136261u;
@@ -459,6 +487,7 @@ private:
     std::vector<std::shared_ptr<Slot>> slots_, order_;
     std::vector<int64_t> frameDone_ = std::vector<int64_t>(kChunks, -1);
     CrossSpectra cs_;
+    SolveSettings settings_;
     FFT fft_;
     std::vector<double> win_;
     double sr_ = 48000;
