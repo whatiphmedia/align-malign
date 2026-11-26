@@ -77,18 +77,20 @@ inline void analyseFrame(const FFT& fft, const std::vector<double>& win, const f
 
 // ---------------------------------------------------------------- solver
 struct Profile {
-    double fLo = 2.7;       // below this: untouched (DC cannot be rotated)
-    double fHi = 1000.0;    // full strength up to here
-    double fTaper = 1500.0; // fades to zero by here (log-frequency taper)
-    double tau = 0.05;      // rotate only where |gain| > tau * own energy
-    double smoothHz = 12.0; // complex smoothing width across frequency
-    bool anti = false;      // false = align (max energy), true = malign (min energy)
+    double fLo = 2.7;        // below this: untouched (DC cannot be rotated)
+    double fHi = 1000.0;     // full strength up to here
+    double fTaper = 1500.0;  // fades to zero by here (log-frequency taper)
+    double pull = 0.5;       // how strongly each track prefers to stay as recorded (x its own energy): a track only
+                             // rotates where the other tracks' shared sound outweighs this, and only as far as it pays
+    double smoothOct = 1.0 / 6.0; // cross-spectra are averaged over this bandwidth before solving (statistics + continuity)
+    double maxGdMs = 10.0;   // the correction may never move any frequency by more than this in time
+    bool anti = false;       // false = align (max energy), true = malign (min energy)
 };
 
 inline Profile alignStandard() { return {}; }
-inline Profile malignStandard() { Profile p; p.anti = true; p.fHi = 1500; p.fTaper = 2200; return p; }
-inline Profile alignExtended() { Profile p; p.tau = 0.0; p.fHi = 4000; p.fTaper = 4400; p.smoothHz = 18; return p; }
-inline Profile malignExtended() { Profile p = alignExtended(); p.anti = true; return p; }
+inline Profile malignStandard() { Profile p; p.anti = true; p.fHi = 1500; p.fTaper = 2200; p.pull = 0.15; return p; }
+inline Profile alignExtended() { Profile p; p.pull = 0.3; p.fHi = 4000; p.fTaper = 4400; p.maxGdMs = 15.0; return p; }
+inline Profile malignExtended() { Profile p = alignExtended(); p.anti = true; p.pull = 0.1; return p; }
 
 inline double taperWeight(const Profile& p, double f) {
     if (f < p.fLo) return 0.0;
@@ -129,42 +131,86 @@ inline CrossSpectra groupSpectra(const CrossSpectra& cs, const std::vector<int>&
 }
 
 // Returns phase[t][k] (radians) for every track t and solve bin k (size cs.K).
-inline std::vector<std::vector<float>> solve(const CrossSpectra& cs, int anchor, const Profile& p, int sweeps = 8) {
+//
+// What makes this safe on real music (a whole song of unrelated parts, not test tones):
+//  - Cross-spectra are averaged over a fraction of an octave first, and each pair only counts as far as the two
+//    tracks are actually coherent there (above what chance gives for this much audio). Unrelated parts - a kick and
+//    a synth bell - share nothing, and are left alone instead of being rotated to chase noise.
+//  - Every track is pulled towards its recorded phase, so it only moves where that clearly pays.
+//  - Bins are solved low to high, each starting from the previous bin's answer, so the result is continuous.
+//  - The result is unwrapped, smoothed, and its slope (= time shift per frequency) is capped at maxGdMs.
+inline std::vector<std::vector<float>> solve(const CrossSpectra& cs, int /*anchor*/, const Profile& p, int sweeps = 8) {
     const int T = cs.T, K = cs.K;
     std::vector<std::vector<float>> out(T, std::vector<float>(K, 0.f));
-    if (T < 2 || cs.frames == 0) return out;
-    std::vector<double> th(T);
+    if (T < 2 || cs.frames == 0 || K < 4) return out;
+
+    // 1) fractional-octave smoothed cross-spectra (prefix sums per pair)
+    const int P = T * (T + 1) / 2;
+    auto pid = [T](int i, int j) { return i * T - i * (i - 1) / 2 + (j - i); };      // i <= j
+    std::vector<std::vector<cplx>> pre(P, std::vector<cplx>(K + 1));
+    for (int i = 0; i < T; ++i)
+        for (int j = i; j < T; ++j) {
+            auto& v = pre[pid(i, j)];
+            for (int k = 0; k < K; ++k) v[k + 1] = v[k] + (k >= 1 ? cs.at(i, j, k) : cplx(0, 0));
+        }
+    const double ratio = std::pow(2.0, p.smoothOct / 2);
+    auto win = [&](int k, int& lo, int& hi) {
+        const double f = k * cs.binHz;
+        const int h = std::max(2, (int)std::round((f * ratio - f) / cs.binHz));
+        lo = std::max(1, k - h); hi = std::min(K - 1, k + h);
+    };
+    // chance coherence for this many (overlapping Hann) frames and bins
+    const double framesEff = std::max(1.0, cs.frames / 1.9);
+
+    std::vector<double> th(T, 0.0), own(T);
+    std::vector<cplx> Cs((size_t)T * T);
     for (int k = 1; k < K; ++k) {
         const double f = k * cs.binHz;
-        if (taperWeight(p, f) <= 0) continue;
-        std::fill(th.begin(), th.end(), 0.0);
-        for (int s = 0; s < sweeps; ++s)
+        if (taperWeight(p, f) <= 0) { std::fill(th.begin(), th.end(), 0.0); continue; }
+        int lo, hi; win(k, lo, hi);
+        const double nEff = framesEff * (hi - lo + 1);
+        const double g0 = std::min(0.5, 4.0 / nEff + 0.03);
+        for (int i = 0; i < T; ++i) own[i] = (pre[pid(i, i)][hi + 1] - pre[pid(i, i)][lo]).real();
+        for (int i = 0; i < T; ++i)
+            for (int j = i + 1; j < T; ++j) {
+                const cplx c = pre[pid(i, j)][hi + 1] - pre[pid(i, j)][lo];
+                const double den = own[i] * own[j];
+                const double g2 = den > 0 ? std::norm(c) / den : 0.0;
+                const double w = std::clamp((g2 - g0) / (1.0 - g0), 0.0, 1.0);   // only real shared sound counts
+                Cs[(size_t)i * T + j] = w * c;
+                Cs[(size_t)j * T + i] = std::conj(w * c);
+            }
+        for (int s = 0; s < sweeps; ++s)                                         // warm start: th from bin k-1
             for (int i = 0; i < T; ++i) {
-                if (i == anchor) continue;
+                if (own[i] <= 0) { th[i] = 0; continue; }
                 cplx si(0, 0);
                 for (int j = 0; j < T; ++j)
-                    if (j != i) si += cs.at(i, j, k) * std::polar(1.0, -th[j]);
-                const double own = cs.at(i, i, k).real();
-                if (std::abs(si) <= p.tau * own || std::abs(si) == 0.0) { th[i] = 0.0; continue; }
-                th[i] = p.anti ? M_PI - std::arg(si) : -std::arg(si);
+                    if (j != i) si += Cs[(size_t)i * T + j] * std::polar(1.0, -th[j]);
+                const cplx z = p.anti ? cplx(p.pull * own[i], 0) - si : cplx(p.pull * own[i], 0) + si;
+                th[i] = std::abs(z) > 0 ? -std::arg(z) : 0.0;
             }
-        for (int t = 0; t < T; ++t) out[t][k] = (float)std::remainder(th[t], 2 * M_PI);
+        for (int t = 0; t < T; ++t) out[t][k] = (float)th[t];
     }
-    // Smooth across frequency on the unit circle (energy weighted), then taper.
-    const int half = std::max(1, (int)std::round(p.smoothHz / cs.binHz / 2));
-    std::vector<float> tmp(K);
+
+    // 2) unwrap, smooth (energy weighted, same bandwidth), cap the time shift, taper
+    const double maxStep = 2 * M_PI * cs.binHz * p.maxGdMs * 1e-3;
+    std::vector<double> u(K), sm(K);
     for (int t = 0; t < T; ++t) {
+        u[0] = 0;
+        for (int k = 1; k < K; ++k) u[k] = u[k - 1] + std::remainder((double)out[t][k] - (k > 1 ? out[t][k - 1] : 0.0), 2 * M_PI);
+        std::vector<double> pw(K + 1, 0.0), pu(K + 1, 0.0);
         for (int k = 0; k < K; ++k) {
-            cplx acc(0, 0);
-            for (int d = -half; d <= half; ++d) {
-                const int q = k + d;
-                if (q < 1 || q >= K) continue;
-                const double w = cs.at(t, t, q).real() + 1e-30;
-                acc += w * std::polar(1.0, (double)out[t][q]);
-            }
-            tmp[k] = std::abs(acc) > 0 ? (float)std::arg(acc) : 0.f;
+            const double w = (k >= 1 ? cs.at(t, t, k).real() : 0.0) + 1e-30;
+            pw[k + 1] = pw[k] + w; pu[k + 1] = pu[k] + w * u[k];
         }
-        for (int k = 0; k < K; ++k) out[t][k] = (float)(tmp[k] * taperWeight(p, k * cs.binHz));
+        for (int k = 0; k < K; ++k) { int lo, hi; win(std::max(1, k), lo, hi); sm[k] = (pu[hi + 1] - pu[lo]) / (pw[hi + 1] - pw[lo]); }
+        sm[0] = 0;
+        // start from zero at the bottom and follow the smoothed curve no faster than maxGdMs allows
+        double cur = 0;
+        for (int k = 1; k < K; ++k) {
+            cur += std::clamp(sm[k] - cur, -maxStep, maxStep);
+            out[t][k] = (float)(cur * taperWeight(p, k * cs.binHz));
+        }
     }
     return out;
 }

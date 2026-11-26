@@ -31,7 +31,7 @@ jobs:
         run: cmake -B build -S . -A x64 -DALIGNMALIGN_BUILD_TESTS=ON
 
       - name: Build
-        run: cmake --build build --config Release --parallel --target am_engine_test am_convolver_test am_latency_test am_groups_test AlignMalign_VST3 AlignMalign_Standalone
+        run: cmake --build build --config Release --parallel --target am_engine_test am_convolver_test am_latency_test am_groups_test am_solver_test AlignMalign_VST3 AlignMalign_Standalone
 
       - name: Engine tests
         run: |
@@ -39,6 +39,7 @@ jobs:
           build\Release\am_convolver_test.exe
           build\Release\am_latency_test.exe
           build\Release\am_groups_test.exe
+          build\Release\am_solver_test.exe
 
       - name: Package
         shell: pwsh
