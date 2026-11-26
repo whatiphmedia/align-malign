@@ -1363,7 +1363,7 @@ function drawPyr(t){const W=96,H=72;pg.clearRect(0,0,W,H);pg.strokeStyle='#3a3a3
 // GridScan (rebuilt): linesColor #4d4757, scanColor #7dd3fc, cells 5, depth 3.2, scanDuration 4.1 s, scanDelay 2.2 s, ping on click,
 // lineThickness 1.4, solid, depthFade 1, shading 1, reflection 1, points, scan backward, scanWidth 5, trail 1, glow 1.5, parallax 0.6,
 // autoScan, interactive (grid pushes away from the mouse), intro. Runs only while hovered; at rest it is a still black grid.
-const SCAN_T=4.1/1.3;const GS={lines:[77,71,87],scan:[125,211,252],cells:5,depth:3.2,dur:4.1,delay:2.2,thick:1.4,depthFade:1,shading:1,reflection:1,width:5,trail:1,glow:1.5,parallax:0.6};
+const SCAN_T=4.1/1.3;const GS={lines:[77,71,87],scan:[57,230,176],cells:5,depth:3.2,dur:4.1,delay:2.2,thick:1.4,depthFade:1,shading:1,reflection:1,width:5,trail:1,glow:1.5,parallax:0.6};
 // HoloMosaic (rebuilt): color #1e1921, metal #e8ebf1, pearl, tileSize .85, gap .1, scatter .16, tilt .35, saturation 1.3, intensity .75,
 // ripple .25, glitter 1, sheen 1.5, grain .25, speed .45, intro, mouse, flip on click, bevel .36, rotation -90, swirl 1.75, bands .7, softness .23, fade .31,
 // mouseStrength .55, mouseRadius .25.
@@ -1391,7 +1391,7 @@ function buildMask(fx){const {W,H,cv,host}=fx,m=document.createElement('canvas')
         const a=x<=fadeX?255:Math.round(255*(1-(x-fadeX)/(s.r-fadeX)));
         if(a>0)d32[y*W+x]=((a<<24)>>>0)|0x050505;}}
     mg.putImageData(img,0,0);return m;}
-  const PAD=host.id==='propage'?1:3,FALL=host.id==='propage'?6:26;
+  const PAD=host.id==='propage'?1:2,FALL=host.id==='propage'?6:8;   // a tight edge around controls, not a wide halo
   for(let y=0;y<H;y+=2)for(let x=0;x<W;x+=2){let d=1e9;for(const s of shapes){const dd=s.c?Math.hypot(x+1-s.x,y+1-s.y)-s.r:Math.hypot(Math.max(s.l-x-1,0,x+1-s.r),Math.max(s.t-y-1,0,y+1-s.b));if(dd<d)d=dd;}
     if(!grid&&d<=0)continue; // flavour tabs keep their own translucent fill
     let a=d<=PAD?1:1-(d-PAD)/FALL;if(a<=0)continue;a=a*a*(3-2*a);
@@ -1742,7 +1742,8 @@ void main() {
    glow 1.5, parallax 0.35. One shared WebGL2 context renders whichever module is active, then the frame is copied
    into that module's own canvas, so the existing gating still applies: a still frame at rest, animation only while
    the module is hovered in the active window. Falls back to the Canvas2D tunnel if WebGL2 is unavailable. */
-const GSN={lines:[0x4d/255,0x47/255,0x57/255],scan:[0x7d/255,0xd3/255,0xfc/255],cells:5,depth:1.4,dur:2.1,delay:1.6,
+const GSN={lines:[0x4d/255,0x47/255,0x57/255],scan:[0x39/255,0xe6/255,0xb0/255],   // scan = the pyramid's green (#39e6b0)
+  cells:5,depth:1.4,dur:2.1,delay:1.6,
   thick:3,depthFade:1,shading:1,reflection:1,scanWidth:5,trail:1,glow:1.5,parallax:0.35,points:true,eyeDist:1.25,intro:2.2};
 GSN.core=GSN.scan.map(c=>c+(1-c)*0.65);
 let GSGL=null;
