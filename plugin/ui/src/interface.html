@@ -127,6 +127,12 @@ header{grid-area:head;display:flex;align-items:center;gap:14px;flex-wrap:wrap;pa
 .field label,.field .name{font:650 13px/1.2 var(--ui)}
 .field output{color:var(--align);white-space:nowrap;font:500 13px/1 var(--mono);font-variant-numeric:tabular-nums}
 .field .hint{font-size:12px;color:var(--muted);margin:0}
+/* explanations live in tooltips (hover), to save space */
+.has-tip label,.has-tip .switch span,h2.has-tip{text-decoration:underline dotted color-mix(in srgb,var(--muted) 70%,transparent);text-underline-offset:3px;cursor:help}
+#tip{position:fixed;z-index:9999;max-width:300px;padding:8px 10px;background:#0c0c0c;color:var(--text);border:1px solid #2a2a2a;
+  box-shadow:0 6px 18px rgba(0,0,0,.6);font:500 12px/1.45 var(--sans,system-ui);pointer-events:none;opacity:0;transition:opacity .12s}
+#tip.on{opacity:1}
+@media (prefers-reduced-motion:reduce){#tip{transition:none}}
 input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:20px;background:transparent;margin:0}
 input[type=range]::-webkit-slider-runnable-track{height:8px;border:1px solid var(--dim);background:linear-gradient(90deg,transparent var(--fill,50%),rgba(5,5,5,.78) var(--fill,50%)),var(--grad)}
 input[type=range]::-moz-range-track{height:6px;border:1px solid var(--dim);background:linear-gradient(90deg,transparent var(--fill,50%),rgba(5,5,5,.78) var(--fill,50%)),var(--grad)}
@@ -222,14 +228,14 @@ input.ed-in:focus-visible,input.ed-in:focus{outline:0}
     </div>
   </section>
   <div class="flavor br" role="group" aria-label="Flavour" data-fx="mosaic"><canvas class="fx" aria-hidden="true"></canvas><span class="lbl-tab">Flavour</span>
-      <button aria-pressed="true" data-flv="FUSE">Fuse<small>merge tracks</small></button>
-      <button aria-pressed="false" data-flv="ERASE">Erase<small>cancel overlaps</small></button>
-      <button aria-pressed="false" data-flv="GHOST">Ghost<small>smeared echoes</small></button>
-      <button aria-pressed="false" data-flv="PHANTOM">Phantom<small>headphone pitch</small></button>
-      <button aria-pressed="false" data-flv="UNMASK">Unmask<small>headphone clarity</small></button>
-      <button aria-pressed="false" data-flv="ENVELOP">Envelop<small>wide low end</small></button>
-      <button aria-pressed="false" data-flv="CURVE">Curve<small>bend the phase</small></button>
-      <button aria-pressed="false" data-flv="DISPERSE">Disperse<small>spread in time</small></button>
+      <button aria-pressed="true" data-flv="FUSE" data-tip="merge tracks">Fuse</button>
+      <button aria-pressed="false" data-flv="ERASE" data-tip="cancel overlaps">Erase</button>
+      <button aria-pressed="false" data-flv="GHOST" data-tip="smeared echoes">Ghost</button>
+      <button aria-pressed="false" data-flv="PHANTOM" data-tip="headphone pitch">Phantom</button>
+      <button aria-pressed="false" data-flv="UNMASK" data-tip="headphone clarity">Unmask</button>
+      <button aria-pressed="false" data-flv="ENVELOP" data-tip="wide low end">Envelop</button>
+      <button aria-pressed="false" data-flv="CURVE" data-tip="bend the phase">Curve</button>
+      <button aria-pressed="false" data-flv="DISPERSE" data-tip="spread in time">Disperse</button>
     </div>
 
 <section class="pro br" aria-label="Pro settings" id="propage" data-fx="grid"><canvas class="fx" aria-hidden="true"></canvas><span class="lbl-tab">Pro settings</span>
@@ -1322,6 +1328,16 @@ const REFINE={
 function refineFields(fl){return fl==='PHANTOM'?[...REFINE.PHANTOM,...REFINE.common]:REFINE.common;}
 function refineLead(fl){return fl==='PHANTOM'?'Phantom notes: play pitches made of stereo phase with MIDI. Amount, movement and mix for PHANTOM are below.'
   :`${fl}: amount, movement and mix. More refinements for this flavour are planned.`;}
+// Hover tooltips for every [data-tip] (keyboard focus too)
+{const tip=document.createElement('div');tip.id='tip';tip.setAttribute('role','tooltip');document.body.appendChild(tip);let timer=0,cur=null;
+  const place=(x,y)=>{const r=tip.getBoundingClientRect(),W=innerWidth,H=innerHeight;let L=x+14,T=y+16;if(L+r.width>W-8)L=x-r.width-12;if(T+r.height>H-8)T=y-r.height-12;tip.style.left=Math.max(8,L)+'px';tip.style.top=Math.max(8,T)+'px';};
+  const show=(el,x,y)=>{tip.textContent=el.dataset.tip;tip.classList.add('on');place(x,y);};
+  const hide=()=>{clearTimeout(timer);cur=null;tip.classList.remove('on');};
+  document.addEventListener('pointerover',e=>{const el=e.target.closest&&e.target.closest('[data-tip]');if(el===cur)return;hide();if(!el)return;cur=el;const x=e.clientX,y=e.clientY;timer=setTimeout(()=>show(el,x,y),280);});
+  document.addEventListener('pointermove',e=>{if(cur&&tip.classList.contains('on'))place(e.clientX,e.clientY);});
+  document.addEventListener('pointerdown',hide);document.addEventListener('scroll',hide,true);
+  document.addEventListener('focusin',e=>{const el=e.target.closest&&e.target.closest('[data-tip]');if(!el)return;const r=el.getBoundingClientRect();cur=el;show(el,r.left,r.bottom);});
+  document.addEventListener('focusout',hide);}
 const PRO=[
 
  {name:'Alignment',lead:'How Learn lines up every track. These settings are shared by the whole session: change them in any window and every copy re-solves from what Learn already heard.',fields:[
@@ -1331,7 +1347,7 @@ const PRO=[
    {t:'range',k:'stiff',name:'Anchor stiffness',min:0,max:1,step:0.01,v:0.5,fmt:v=>`${Math.round(v*100)}%`,hint:'How strongly every track stays as recorded. Higher moves tracks only where it clearly pays.'},
    {t:'select',k:'anchor',name:'Anchor track',opts:['Auto (loudest low end)'],v:0,hint:'This track is never changed; everything else lines up to it.'},
    {t:'switch',k:'guard',name:'Never make it worse',v:true,hint:'Wherever the correction would not add to the mix, it fades back to the sound as recorded.'},
-   {t:'switch',k:'latAuto',name:'Latency before this track: read from Live',v:true,hint:'Adds up the delay of every synth and plugin in front of Auto Malign on this track, so it can sit last in the chain. Needs the Auto Malign control surface in Live.'},
+   {t:'switch',k:'latAuto',name:'Latency before this track: read from Live',v:true,status:true,hint:'Adds up the delay of every synth and plugin in front of Auto Malign on this track, so it can sit last in the chain. Needs the Auto Malign control surface in Live.'},
    {t:'range',k:'latMs',name:'Latency before this track (manual)',min:0,max:250,step:0.1,v:0,fmt:v=>`${v.toFixed(1)} ms`,hint:'Used when Live can\'t be read (Studio One, or the control surface is off). Add up the latency of the synth and plugins before Auto Malign.'},
    {t:'action',k:'installLive',name:'Install the Live control surface',label:'Install for Ableton Live',hint:'Copies the Auto Malign script into your Live User Library. Then pick Auto Malign under Settings > Link, Tempo & MIDI > Control Surface.'}]},
  {name:'Match',lead:'Keeps level and tone honest so you hear phase, not loudness.',fields:[
@@ -1346,7 +1362,7 @@ const PRO=[
    {t:'select',k:'fps',name:'Frame rate',opts:['30 fps','60 fps'],v:0,on:v=>{S.fps=v?60:30;}},
    {t:'switch',k:'tags',name:'Value tags in the view',v:true,on:v=>{P.pro=v;}}]}];
 {const rail=document.getElementById('rail'),panel=document.getElementById('panel');let cur=0;
-  function render(){panel.innerHTML='';const sec=PRO[cur];const h=document.createElement('h2');h.textContent=sec.name;const l=document.createElement('p');l.className='lead';l.textContent=sec.lead;panel.append(h,l);
+  function render(){panel.innerHTML='';const sec=PRO[cur];const h=document.createElement('h2');h.textContent=sec.name;if(sec.lead){h.dataset.tip=sec.lead;h.classList.add('has-tip');}panel.append(h);
     if(sec.groups){const tb=document.createElement('table');tb.className='groups';tb.id='groupsTable';
       const demo=(r,g)=>{r.group=g;buildGroups(tb,sec.groups,demo);};buildGroups(tb,sec.groups,demo);   // the plugin replaces these rows with the real tracks
       panel.appendChild(tb);return;}
@@ -1364,7 +1380,9 @@ const PRO=[
       else if(f.t==='select'){box.innerHTML=`<div class="row"><label for="${idf}"></label></div><select id="${idf}"></select>`;box.querySelector('label').textContent=f.name;const sel=box.querySelector('select');
         f.opts.forEach((o,k)=>{const op=document.createElement('option');op.value=k;op.textContent=o;sel.appendChild(op);});sel.value=f.v;sel.addEventListener('change',()=>{f.v=+sel.value;f.on&&f.on(f.v);});}
       else{box.innerHTML=`<label class="switch"><input type="checkbox" id="${idf}"><span></span></label>`;box.querySelector('span').textContent=f.name;const cb=box.querySelector('input');cb.checked=f.v;cb.addEventListener('change',()=>{f.v=cb.checked;f.on&&f.on(f.v);});}
-      if(f.hint){const hp=document.createElement('p');hp.className='hint';hp.textContent=f.hint;box.appendChild(hp);}grid.appendChild(box);}
+      if(f.hint){box.dataset.tip=f.hint;box.classList.add('has-tip');}                     // explanations are tooltips
+      if(f.status){const hp=document.createElement('p');hp.className='hint status';box.appendChild(hp);}   // live status stays visible
+      grid.appendChild(box);}
     panel.appendChild(grid);}
   PRO.rerenderIfRefine=()=>{if(PRO[cur]&&PRO[cur].refine&&!document.getElementById('propage').hidden)render();};
   PRO.forEach((sec,k)=>{const b=document.createElement('button');b.textContent=sec.name;b.setAttribute('aria-current',k===0?'true':'false');b.addEventListener('click',()=>{cur=k;rail.querySelectorAll('button').forEach(x=>x.setAttribute('aria-current',x===b?'true':'false'));render();});rail.appendChild(b);});
