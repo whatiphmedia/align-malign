@@ -26,7 +26,8 @@ struct PhantomParams {
     float carrier = 0.35f;     // identical noise/source around the notes (0..1), relative to the track
     bool fillGaps = true;
     int noiseFlavour = 0;      // Huggins carrier noise: 0 Hiss (white), 1 Breath (soft, dark), 2 Crackle (sparse grains), 3 Pitched (buzzes at the note)
-    float noiseReleaseMs = 120.f;  // the carrier noise fades this fast after the MIDI note ends (independent of Release)      // add carrier only where the track itself has little sound around the note
+    float noiseReleaseMs = 120.f;  // the Huggins cue (mono zone, phase sweep, carrier noise) fades this fast after the MIDI note
+                                   // ends, independent of Release, which then only shapes the resonator tail      // add carrier only where the track itself has little sound around the note
     float strength = 0.5f;     // 0..1: band width of the phase sweep (8..20 % of the note) and of the mono zone
     bool fold = true;          // move every note into 250..600 Hz, where the ears follow phase best
     int partials = 6;          // harmonics per note (1..6), up to 1.5 kHz
@@ -101,7 +102,7 @@ private:
     };
     struct Voice {
         bool active = false, held = false, releasing = false, latched = false;   // latched: held on by Constant
-        int note = 0; float vel = 1; double env = 0, cenv = 0, ph = 0, drift = 0;   // cenv: carrier noise envelope; ph: note phase (Pitched)
+        int note = 0; float vel = 1; double env = 0, cenv = 0, ph = 0, drift = 0, hug = 0;   // hug: Huggins cue level (follows the note, Noise release)   // cenv: carrier noise envelope; ph: note phase (Pitched)
         double f = 440, fTarget = 440, fApplied = 0;
         std::array<Biquad, kPartials> ap, collapse, car;   // phase sweep (left), mono zone (side), carrier band
         std::array<Biquad, kPartials> own;                  // the track's own sound in the carrier band
@@ -237,6 +238,7 @@ private:
                 // the carrier noise only sounds while the MIDI note (or the sustain pedal) holds it, then fades on its own release
                 if (v.held || (sustain_ && !v.releasing && !v.latched)) v.cenv = std::min(1.0, v.cenv + att);
                 else v.cenv = std::max(0.0, v.cenv - nRel);
+                v.hug = v.cenv * v.cenv * (3.0 - 2.0 * v.cenv) * (v.env * v.env * (3.0 - 2.0 * v.env));   // the Huggins cue's level
                 // pitch: glide + bend, retune the filters every 32 samples if it moved
                 v.f += (v.fTarget - v.f) * glideA;
                 const double f = v.f * bendMul;
@@ -275,7 +277,7 @@ private:
                 // Huggins: make the note's zone identical in both ears, add the carrier there, sweep the left phase
                 for (int k = 0; k < v.nPart; ++k) {
                     const double gk = 1.0 / std::pow(k + 1.0, 0.3);
-                    S -= e * v.collapse[(size_t)k].run((float)S);
+                    S -= v.hug * v.collapse[(size_t)k].run((float)S);
                     double nin = noise;
                     if (p_.noiseFlavour == 3 && !sL)   // Pitched: a tone on the harmonic whose phase wanders (~10 Hz wide), plus a little hiss
                         nin = 0.45 * noise + 1.26 * std::sqrt(rmsM_) * std::cos(v.ph * (k + 1) + v.drift * (k + 1));
@@ -291,8 +293,7 @@ private:
                         v.fill[(size_t)k] += (want - v.fill[(size_t)k]) * fillA;
                         fill = v.fill[(size_t)k];
                     }
-                    const double ce = v.cenv * v.cenv * (3.0 - 2.0 * v.cenv) * e;
-                    carrierMid += c * p_.carrier * depth * ce * gk * fill;
+                    carrierMid += c * p_.carrier * depth * v.hug * gk * fill;
                 }
             }
             // cap the total carrier at Carrier x the track's level however many notes overlap (a single note sits
@@ -308,7 +309,7 @@ private:
                 Lh = outL;
                 for (auto& v : voices_) {
                     if (!v.active || v.env <= 0) continue;
-                    for (int k = 0; k < v.nPart; ++k) Lh += v.env * (v.ap[(size_t)k].run((float)Lh) - Lh);
+                    for (int k = 0; k < v.nPart; ++k) Lh += v.hug * (v.ap[(size_t)k].run((float)Lh) - Lh);
                 }
                 outL = Lh;
             }

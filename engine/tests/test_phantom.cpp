@@ -182,6 +182,14 @@ int main() {
         for (int fl = 0; fl < 4; ++fl) { const double t = tail(fl); std::printf("    flavour %d: carrier 0.3 s after note off %+.1f dB vs during\n", fl, t); worst = std::max(worst, t); }
         check(worst < -30, "carrier noise fades with Noise release after the note ends, for every noise flavour");
     }
+    {   // 13. the whole Huggins cue (mono zone + phase sweep) stops with the note too; Release then only shapes the resonator
+        PhantomParams p; p.assist = 0.f; p.carrier = 0.f; p.releaseMs = 2000; p.noiseReleaseMs = 100;
+        auto a = render(mL, mR, p, [&](PhantomNotes& pn) { pn.noteOn(note, 1.f, 1000); pn.noteOff(note, (int64_t)(1.5 * sr)); });
+        auto en = [&](double t0, double t1) { double e = 0; for (int i = (int)(t0 * sr); i < (int)(t1 * sr); ++i) e += std::pow(a.first[i] - mL[i], 2) + std::pow(a.second[i] - mR[i], 2); return e; };
+        const double t = 10 * std::log10(en(1.8, 2.3) / en(1.0, 1.5) + 1e-30);
+        std::printf("    Huggins cue 0.3 s after note off: %+.1f dB vs during\n", t);
+        check(t < -30, "the Huggins cue fades with Noise release, not with the long resonator Release");
+    }
     std::printf(fails ? "%d FAILED\n" : "all checks passed\n", fails);
     return fails ? 1 : 0;
 }
