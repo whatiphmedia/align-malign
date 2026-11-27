@@ -101,7 +101,7 @@ private:
     int lastFlavourIdx_ = -1;
     juce::AudioParameterChoice *pPpMode_ = nullptr, *pPpSource_ = nullptr;
     juce::AudioParameterFloat *pPpAssist_ = nullptr, *pPpCarrier_ = nullptr, *pPpPurity_ = nullptr, *pPpStrength_ = nullptr, *pPpAttack_ = nullptr,
-                              *pPpRelease_ = nullptr, *pPpGlide_ = nullptr, *pPpBend_ = nullptr, *pPpTame_ = nullptr;
+                              *pPpRelease_ = nullptr, *pPpGlide_ = nullptr, *pPpBend_ = nullptr, *pPpTame_ = nullptr, *pPpDrive_ = nullptr;
     juce::AudioParameterBool *pPpFold_ = nullptr, *pPpFill_ = nullptr, *pPpConst_ = nullptr;
     juce::AudioParameterInt* pPpPartials_ = nullptr;
     std::shared_ptr<am::SharedRing> ownRing_;          // this track's input, for other tracks' Phantom notes

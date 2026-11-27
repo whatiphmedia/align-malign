@@ -1323,6 +1323,7 @@ const REFINE={
    {t:'switch',k:'ppfold',name:'Fold notes into the sweet spot (250–600 Hz)',v:true,hint:'Keeps each note name but moves it to where the ears follow phase best.'},
    {t:'range',k:'pppartials',name:'Harmonics',min:1,max:6,step:1,v:6,fmt:v=>`${v}`},
    {t:'range',k:'pptame',name:'Tame',min:0,max:1,step:0.01,v:0.6,fmt:pct,hint:'A limiter on what the notes add, set relative to the track. Holds down resonant peaks so a note that rings up hard stays at a steady level. 0% only catches extreme spikes.'},
+   {t:'range',k:'ppdrive',name:'Drive',min:0,max:1,step:0.01,v:0,fmt:v=>v?pct(v):'Off',hint:'Saturates the Malodic notes themselves (the resonator notes), never the track. Tame still holds their level. In Huggins mode it drives the Assist notes; the phase cue itself has nothing to distort.'},
    {t:'switch',k:'ppconst',name:'Constant',v:false,hint:'Keeps the last notes sounding through gaps until the next note arrives, at a steadier level. Off: each note fades out on its release when the MIDI note ends.'},
    {t:'range',k:'ppattack',name:'Attack',min:1,max:2000,step:1,v:40,fmt:fmtMs,hint:'Fade-in time of each note (an S-curve, so it starts gently).'},
    {t:'range',k:'pprelease',name:'Release',min:5,max:8000,step:5,v:700,fmt:fmtMs,hint:'Fade-out time after the note ends.'},

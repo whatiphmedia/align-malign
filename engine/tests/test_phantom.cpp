@@ -159,6 +159,15 @@ int main() {
         std::printf("    loudest frames: tame 0 %.1f dB, tame 1 %.1f dB; first 300 ms peak %.1f / %.1f dB\n", p0, p1, f0_, f1);
         check(p1 < p0 - 4 && f1 < p1 + 1, "Tame: resonant peaks are held down and the note starts without a burst");
     }
+    {   // 11. Drive: distorts only the notes (more harmonics added), still side-only so the mono sum is untouched
+        auto run = [&](float drive) { PhantomParams p; p.huggins = false; p.assist = 0.6f; p.drive = drive;
+            return render(mL, mR, p, [&](PhantomNotes& pn) { pn.noteOn(note, 1.f, 1000); }); };
+        auto a = run(0.f), b = run(1.f);
+        double md = 0, diff = 0;
+        for (int i = 0; i < N; ++i) { md = std::max(md, (double)std::abs((b.first[i] + b.second[i]) - (mL[i] + mR[i]))); diff += std::pow((b.first[i] - b.second[i]) - (a.first[i] - a.second[i]), 2); }
+        std::printf("    drive: mono change %.2e, side change rms %.4f\n", md, std::sqrt(diff / N));
+        check(md < 1e-5 && diff > 0, "Drive: only the notes are saturated; the mono sum (the track) is unchanged");
+    }
     std::printf(fails ? "%d FAILED\n" : "all checks passed\n", fails);
     return fails ? 1 : 0;
 }

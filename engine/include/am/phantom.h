@@ -30,6 +30,7 @@ struct PhantomParams {
     int partials = 6;          // harmonics per note (1..6), up to 1.5 kHz
     float attackMs = 40.f, releaseMs = 700.f;   // smooth (S-curve) fade in and out
     float tame = 0.6f;         // 0..1: limiter on what the notes add, relative to the track (tames resonant peaks)
+    float drive = 0.f;         // 0..1: saturation on the generated notes only (never on the track itself)
     bool constant = false;     // keep the last notes sounding through gaps until the next note arrives
     float glideMs = 0.f;       // 0 = jump; else each new note starts from the last pitch and glides
     float bendRange = 2.f;     // semitones for full pitch bend
@@ -293,6 +294,10 @@ private:
             // steady tone); then rounded off so nothing slips through before the limiter reacts
             const double target = 0.29 * std::max(p_.assist, 0.01f) * level;
             const double thr = target * (8.0 - 6.5 * tame) + 1e-9;
+            if (p_.drive > 0.001f) {                         // Drive: saturate only the notes, then match their level
+                const double k = 1.0 + 19.0 * std::clamp((double)p_.drive, 0.0, 1.0), ref = 1.4 * target + 1e-9;
+                assistSide = ref * std::tanh(k * assistSide / ref) / std::sqrt(k) * (1.0 + 0.6 * p_.drive);
+            }
             const double ax = std::abs(assistSide);
             limEnv_ = std::max(ax, limEnv_ * limRel);
             const double gT = limEnv_ > thr ? thr / limEnv_ : 1.0;
