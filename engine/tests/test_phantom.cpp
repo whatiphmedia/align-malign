@@ -168,6 +168,20 @@ int main() {
         std::printf("    drive: mono change %.2e, side change rms %.4f\n", md, std::sqrt(diff / N));
         check(md < 1e-5 && diff > 0, "Drive: only the notes are saturated; the mono sum (the track) is unchanged");
     }
+    {   // 12. the Huggins carrier noise follows the note: gone shortly after note off even with a long Release
+        std::vector<float> sp(N); { double prev = 0; for (int i = 0; i < N; ++i) { const double x = g(rng); sp[i] = (float)(x - prev) * 0.5f; prev = x; } }
+        auto tail = [&](int flavour) {
+            PhantomParams p; p.assist = 0.f; p.releaseMs = 2000; p.noiseReleaseMs = 100; p.noiseFlavour = flavour;
+            PhantomParams q = p; q.carrier = 0.f;
+            auto sched = [&](PhantomNotes& pn) { pn.noteOn(note, 1.f, 1000); pn.noteOff(note, (int64_t)(1.5 * sr)); };
+            auto a = render(sp, sp, p, sched), b = render(sp, sp, q, sched);
+            auto en = [&](double t0, double t1) { double e = 0; for (int i = (int)(t0 * sr); i < (int)(t1 * sr); ++i) e += std::pow(a.first[i] - b.first[i], 2) + std::pow(a.second[i] - b.second[i], 2); return e / ((t1 - t0) * sr); };
+            return 10 * std::log10(en(1.8, 2.3) / en(1.0, 1.4) + 1e-30);
+        };
+        double worst = -999;
+        for (int fl = 0; fl < 4; ++fl) { const double t = tail(fl); std::printf("    flavour %d: carrier 0.3 s after note off %+.1f dB vs during\n", fl, t); worst = std::max(worst, t); }
+        check(worst < -30, "carrier noise fades with Noise release after the note ends, for every noise flavour");
+    }
     std::printf(fails ? "%d FAILED\n" : "all checks passed\n", fails);
     return fails ? 1 : 0;
 }

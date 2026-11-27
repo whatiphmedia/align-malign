@@ -24,7 +24,9 @@ struct PhantomParams {
     float assist = 0.25f;      // resonator level (0..1); in Ghost mode the note level
     float purity = 0.7f;       // 0..1: how much of the resonator's noise is removed, keeping only the note and its harmonics
     float carrier = 0.35f;     // identical noise/source around the notes (0..1), relative to the track
-    bool fillGaps = true;      // add carrier only where the track itself has little sound around the note
+    bool fillGaps = true;
+    int noiseFlavour = 0;      // Huggins carrier noise: 0 Hiss (white), 1 Breath (soft, dark), 2 Crackle (sparse grains), 3 Pitched (buzzes at the note)
+    float noiseReleaseMs = 120.f;  // the carrier noise fades this fast after the MIDI note ends (independent of Release)      // add carrier only where the track itself has little sound around the note
     float strength = 0.5f;     // 0..1: band width of the phase sweep (8..20 % of the note) and of the mono zone
     bool fold = true;          // move every note into 250..600 Hz, where the ears follow phase best
     int partials = 6;          // harmonics per note (1..6), up to 1.5 kHz
@@ -99,7 +101,7 @@ private:
     };
     struct Voice {
         bool active = false, held = false, releasing = false, latched = false;   // latched: held on by Constant
-        int note = 0; float vel = 1; double env = 0;
+        int note = 0; float vel = 1; double env = 0, cenv = 0, ph = 0, drift = 0;   // cenv: carrier noise envelope; ph: note phase (Pitched)
         double f = 440, fTarget = 440, fApplied = 0;
         std::array<Biquad, kPartials> ap, collapse, car;   // phase sweep (left), mono zone (side), carrier band
         std::array<Biquad, kPartials> own;                  // the track's own sound in the carrier band
@@ -142,7 +144,7 @@ private:
         v->note = e.note; v->vel = std::clamp(e.v, 0.f, 1.f); v->held = true; v->releasing = false; v->latched = false; v->fTarget = f;
         if (fresh) {
             v->f = (p_.glideMs > 0 && lastFreq_ > 0) ? lastFreq_ : f;
-            v->env = 0; v->fApplied = 0; v->gain = lastGain_; v->ry = -1; v->lp1 = 0; v->cw = 0;
+            v->env = 0; v->cenv = 0; v->ph = 0; v->drift = 0; v->fApplied = 0; v->gain = lastGain_; v->ry = -1; v->lp1 = 0; v->cw = 0;
             std::fill(v->comb.begin(), v->comb.end(), 0.f);
             for (auto* bank : { &v->ap, &v->collapse, &v->car, &v->clean, &v->own }) for (auto& b : *bank) b.reset();
             v->ownMs.fill(0); v->carMs.fill(0); v->fill.fill(1);
@@ -193,6 +195,7 @@ private:
         if (!any) return;                                   // untouched when nothing sounds
         const double att = 1.0 / std::max(1.0, p_.attackMs * 1e-3 * sr_), rel = 1.0 / std::max(1.0, p_.releaseMs * 1e-3 * sr_);
         const double tame = std::clamp((double)p_.tame, 0.0, 1.0);
+        const double nRel = 1.0 / std::max(1.0, p_.noiseReleaseMs * 1e-3 * sr_);
         const double ryUp = 1.0 - std::exp(-1.0 / (0.02 * sr_));              // resonator level: rises fast, falls slowly
         const double slowA = 1.0 - std::exp(-1.0 / (1.5 * sr_));
         const double limRel = std::exp(-1.0 / (0.15 * sr_)), limAtt = 1.0 - std::exp(-1.0 / (0.001 * sr_)), limRec = 1.0 - std::exp(-1.0 / (0.12 * sr_));
@@ -212,7 +215,18 @@ private:
             const double xs = sL ? 0.5 * ((double)sL[i] + (sR ? sR[i] : sL[i])) : M;   // what feeds carrier and resonators
             if (sL) rmsSrc_ += (xs * xs - rmsSrc_) * rmsA;
             const double srcNorm = sL ? std::min(8.0, std::sqrt(rmsM_ / std::max(rmsSrc_, 1e-12))) : 1.0;
-            const double noise = nd_(rng_) * std::sqrt(rmsM_);
+            // carrier noise, flavoured (unit RMS before scaling to the track's level)
+            double nz = nd_(rng_);
+            switch (p_.noiseFlavour) {
+                case 1: {   // Breath: pink-ish (Kellet), softer and darker
+                    pk_[0] = 0.99765 * pk_[0] + nz * 0.0990460; pk_[1] = 0.96300 * pk_[1] + nz * 0.2965164; pk_[2] = 0.57000 * pk_[2] + nz * 1.0526913;
+                    nz = (pk_[0] + pk_[1] + pk_[2] + nz * 0.1848) * 0.42; break; }
+                case 2: {   // Crackle: sparse grains (about 300 a second)
+                    const double r = 300.0 / sr_;
+                    nz = (ud_(rng_) < r) ? (ud_(rng_) < 0.5 ? -1.0 : 1.0) * (0.5 + ud_(rng_)) / std::sqrt(r * 0.583) : 0.0; break; }
+                default: break;
+            }
+            const double noise = nz * std::sqrt(rmsM_);
             double assistSide = 0, carrierMid = 0;
             double Lh = 0; bool hug = false;
             for (auto& v : voices_) {
@@ -220,11 +234,16 @@ private:
                 // envelope
                 if (v.releasing) { v.env -= rel; if (v.env <= 0) { v.env = 0; v.active = false; continue; } }
                 else v.env = std::min(1.0, v.env + att);
+                // the carrier noise only sounds while the MIDI note (or the sustain pedal) holds it, then fades on its own release
+                if (v.held || (sustain_ && !v.releasing && !v.latched)) v.cenv = std::min(1.0, v.cenv + att);
+                else v.cenv = std::max(0.0, v.cenv - nRel);
                 // pitch: glide + bend, retune the filters every 32 samples if it moved
                 v.f += (v.fTarget - v.f) * glideA;
                 const double f = v.f * bendMul;
                 if ((std::abs(f - v.fApplied) > 1e-4 * f || std::abs(p_.purity - v.purityCar) > 0.02) && ((i & 31) == 0 || v.fApplied == 0)) retune(v, f);
                 const double e = v.env * v.env * (3.0 - 2.0 * v.env), depth = 0.3 + 0.7 * v.vel;   // S-curve fades
+                v.ph += 2 * M_PI * f / sr_; if (v.ph > 2 * M_PI * 64) v.ph -= 2 * M_PI * 64;
+                if (p_.noiseFlavour == 3) { v.drift += 0.05 * nd_(rng_); if (std::abs(v.drift) > 2 * M_PI * 64) v.drift = std::fmod(v.drift, 2 * M_PI * 64); }
                 // resonator (both modes): tuned comb fed by the music, added to the side only
                 const double ex = v.lp.run(v.hp.run((float)(xs * srcNorm))) * e;
                 const double D = std::min(sr_ / f, (double)v.comb.size() - 3); const int d0 = (int)D; const double fr = D - d0; const int N = (int)v.comb.size();
@@ -257,7 +276,10 @@ private:
                 for (int k = 0; k < v.nPart; ++k) {
                     const double gk = 1.0 / std::pow(k + 1.0, 0.3);
                     S -= e * v.collapse[(size_t)k].run((float)S);
-                    const double c = v.car[(size_t)k].run((float)(sL ? xs * srcNorm : noise));
+                    double nin = noise;
+                    if (p_.noiseFlavour == 3 && !sL)   // Pitched: a tone on the harmonic whose phase wanders (~10 Hz wide), plus a little hiss
+                        nin = 0.45 * noise + 1.26 * std::sqrt(rmsM_) * std::cos(v.ph * (k + 1) + v.drift * (k + 1));
+                    const double c = v.car[(size_t)k].run((float)(sL ? xs * srcNorm : nin));
                     double fill = 1.0;
                     if (p_.fillGaps && !sL) {
                         // compare the track's own sound in this band with what the carrier would add there; noise
@@ -269,7 +291,8 @@ private:
                         v.fill[(size_t)k] += (want - v.fill[(size_t)k]) * fillA;
                         fill = v.fill[(size_t)k];
                     }
-                    carrierMid += c * p_.carrier * depth * e * gk * fill;
+                    const double ce = v.cenv * v.cenv * (3.0 - 2.0 * v.cenv) * e;
+                    carrierMid += c * p_.carrier * depth * ce * gk * fill;
                 }
             }
             // cap the total carrier at Carrier x the track's level however many notes overlap (a single note sits
@@ -323,6 +346,8 @@ private:
     double lastGain_ = 1, limEnv_ = 0, limGain_ = 1, rmsSlow_ = 1e-6;
     std::mt19937 rng_{ 1234 };
     std::normal_distribution<double> nd_{ 0.0, 1.0 };
+    std::uniform_real_distribution<double> ud_{ 0.0, 1.0 };
+    double pk_[3] = { 0, 0, 0 };
 };
 
 } // namespace am

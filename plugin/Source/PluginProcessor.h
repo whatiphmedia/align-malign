@@ -99,9 +99,9 @@ private:
     am::PhantomNotes phantom_;
     std::atomic<bool> phantomOn_{ false };
     int lastFlavourIdx_ = -1;
-    juce::AudioParameterChoice *pPpMode_ = nullptr, *pPpSource_ = nullptr;
+    juce::AudioParameterChoice *pPpMode_ = nullptr, *pPpSource_ = nullptr, *pPpNoise_ = nullptr;
     juce::AudioParameterFloat *pPpAssist_ = nullptr, *pPpCarrier_ = nullptr, *pPpPurity_ = nullptr, *pPpStrength_ = nullptr, *pPpAttack_ = nullptr,
-                              *pPpRelease_ = nullptr, *pPpGlide_ = nullptr, *pPpBend_ = nullptr, *pPpTame_ = nullptr, *pPpDrive_ = nullptr;
+                              *pPpRelease_ = nullptr, *pPpGlide_ = nullptr, *pPpBend_ = nullptr, *pPpTame_ = nullptr, *pPpDrive_ = nullptr, *pPpNRel_ = nullptr;
     juce::AudioParameterBool *pPpFold_ = nullptr, *pPpFill_ = nullptr, *pPpConst_ = nullptr;
     juce::AudioParameterInt* pPpPartials_ = nullptr;
     std::shared_ptr<am::SharedRing> ownRing_;          // this track's input, for other tracks' Phantom notes

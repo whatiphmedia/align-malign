@@ -1319,6 +1319,8 @@ const REFINE={
    {t:'range',k:'pppurity',name:'Purity',min:0,max:1,step:0.01,v:0.7,fmt:pct,hint:'Removes noise: keeps only the note and its harmonics in the resonator, and narrows the carrier to the note. Higher is cleaner and more tonal.'},
    {t:'range',k:'ppcarrier',name:'Carrier',min:0,max:1,step:0.01,v:0.35,fmt:pct,hint:'Identical sound in both ears around each note, for the cue to ride on (this is meant to be noise unless you choose a source). Follows velocity.'},
    {t:'range',k:'ppstrength',name:'Strength',min:0,max:1,step:0.01,v:0.5,fmt:pct,hint:'Width of the phase sweep and of the mono zone around each note.'},
+   {t:'select',k:'ppnoise',name:'Noise flavour',opts:['Hiss','Breath','Crackle','Pitched'],v:0,hint:'The texture of the Huggins carrier noise. Hiss: plain noise. Breath: softer and darker. Crackle: sparse grains. Pitched: a wavering tone on each harmonic, the most note-like. Not used with a Source other than this track.'},
+   {t:'range',k:'ppnrel',name:'Noise release',min:5,max:3000,step:5,v:120,fmt:fmtMs,hint:'How fast the carrier noise fades after the MIDI note ends, separate from Release, so the noise stops with the note while the resonator tail rings on. With Constant on, the noise still stops at the note end.'},
    {t:'switch',k:'ppfill',name:'Carrier fills gaps only',v:true,hint:'Adds carrier noise only where the track itself has little sound around the note. A full mix needs almost none; sparse sounds like hats still get it.'},
    {t:'switch',k:'ppfold',name:'Fold notes into the sweet spot (250–600 Hz)',v:true,hint:'Keeps each note name but moves it to where the ears follow phase best.'},
    {t:'range',k:'pppartials',name:'Harmonics',min:1,max:6,step:1,v:6,fmt:v=>`${v}`},
