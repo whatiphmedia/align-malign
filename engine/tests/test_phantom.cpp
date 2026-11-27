@@ -3,6 +3,7 @@
 #include "am/phantom.h"
 #include "am/fft.h"
 #include <cstdio>
+#include <algorithm>
 using namespace am;
 
 static int fails = 0;
@@ -120,6 +121,43 @@ int main() {
         const double sparseCut = carrierAdded(sparse, sparse, false) - carrierAdded(sparse, sparse, true);
         std::printf("    carrier reduced by filling gaps: dense track %.1f dB, sparse track %.1f dB\n", denseCut, sparseCut);
         check(denseCut > 10 && sparseCut < 6, "carrier fills gaps: backs off where the track has sound, stays where it doesn't");
+    }
+    // the side layer a Ghost render adds, as 20 ms RMS frames (dB)
+    auto layerFrames = [&](const std::pair<std::vector<float>, std::vector<float>>& o, const std::vector<float>& inL, const std::vector<float>& inR) {
+        const int W = (int)(0.02 * sr); std::vector<double> fr;
+        for (int s0 = 0; s0 + W <= N; s0 += W) { double e = 0;
+            for (int i = s0; i < s0 + W; ++i) { const double d = 0.5 * ((o.first[i] - o.second[i]) - (inL[i] - inR[i])); e += d * d; }
+            fr.push_back(10 * std::log10(e / W + 1e-30)); }
+        return fr;
+    };
+    {   // 9. Constant: a gap between two notes stays filled; without it the note fades out in the gap
+        auto gapLevel = [&](bool constant) {
+            PhantomParams p; p.huggins = false; p.assist = 0.6f; p.constant = constant; p.releaseMs = 150;
+            auto o = render(mL, mR, p, [&](PhantomNotes& pn) {
+                pn.noteOn(note, 1.f, 2000); pn.noteOff(note, (int64_t)(1.0 * sr));
+                pn.noteOn(note + 5, 1.f, (int64_t)(2.2 * sr)); pn.noteOff(note + 5, (int64_t)(2.9 * sr)); });
+            auto fr = layerFrames(o, mL, mR);
+            const double held = fr[(size_t)(0.8 / 0.02)], gap = fr[(size_t)(1.9 / 0.02)];
+            return gap - held;
+        };
+        const double off = gapLevel(false), on = gapLevel(true);
+        std::printf("    level in a 1.2 s gap vs during the note: constant off %+.1f dB, on %+.1f dB\n", off, on);
+        check(off < -30 && on > -3, "Constant: the last note keeps sounding through gaps until the next note");
+    }
+    {   // 10. Tame: the notes start without a resonant burst and hold a steadier level on bursty music
+        std::vector<float> bL(N), bR(N);   // music that comes in loud bursts every 250 ms
+        for (int i = 0; i < N; ++i) { const double env = (i % (int)(0.25 * sr)) < (int)(0.04 * sr) ? 3.0 : 0.3; bL[i] = (float)(mL[i] * env); bR[i] = (float)(mR[i] * env); }
+        auto spread = [&](float tame) {
+            PhantomParams p; p.huggins = false; p.assist = 0.6f; p.tame = tame;
+            auto o = render(bL, bR, p, [&](PhantomNotes& pn) { pn.noteOn(note, 1.f, 2000); });
+            auto fr = layerFrames(o, bL, bR);
+            std::vector<double> v(fr.begin() + (size_t)(0.3 / 0.02), fr.end()); std::sort(v.begin(), v.end());
+            const double first = *std::max_element(fr.begin(), fr.begin() + (size_t)(0.3 / 0.02));
+            return std::make_pair(v[v.size() * 98 / 100], first);   // loudest frames, loudest frame at the start
+        };
+        auto [p0, f0_] = spread(0.f); auto [p1, f1] = spread(1.f);
+        std::printf("    loudest frames: tame 0 %.1f dB, tame 1 %.1f dB; first 300 ms peak %.1f / %.1f dB\n", p0, p1, f0_, f1);
+        check(p1 < p0 - 4 && f1 < p1 + 1, "Tame: resonant peaks are held down and the note starts without a burst");
     }
     std::printf(fails ? "%d FAILED\n" : "all checks passed\n", fails);
     return fails ? 1 : 0;

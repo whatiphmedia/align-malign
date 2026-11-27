@@ -61,7 +61,7 @@
   for (const k of ['famt', 'pmono', 'srot']) PF(k).on = v => send(k, v);
   for (const k of ['loHz', 'hiHz', 'smooth', 'stiff', 'guard']) PF(k).on = v => send(k, v);
   // Malodic notes (Refine flavour > MALODICS)
-  for (const k of ['ppmode', 'ppassist', 'pppurity', 'ppcarrier', 'ppstrength', 'ppfold', 'ppfill', 'pppartials', 'ppattack', 'pprelease', 'ppglide', 'ppbend'])
+  for (const k of ['ppmode', 'ppassist', 'pppurity', 'ppcarrier', 'ppstrength', 'ppfold', 'ppfill', 'pptame', 'ppconst', 'pppartials', 'ppattack', 'pprelease', 'ppglide', 'ppbend'])
     PF(k).on = v => send(k, v);
   let ppSourceIds = [];                                   // select index >= 2 -> session track id
   PF('ppsource').on = v => {
@@ -129,7 +129,7 @@
       if (s.phantom) {
         const p = s.phantom;
         showField('ppmode', p.mode); showField('ppassist', p.assist); showField('pppurity', p.purity); showField('ppcarrier', p.carrier);
-        showField('ppstrength', p.strength); showField('ppfold', p.fold); showField('ppfill', p.fill); showField('pppartials', p.partials);
+        showField('ppstrength', p.strength); showField('ppfold', p.fold); showField('ppfill', p.fill); showField('pptame', p.tame); showField('ppconst', p.constant); showField('pppartials', p.partials);
         showField('ppattack', p.attack); showField('pprelease', p.release); showField('ppglide', p.glide); showField('ppbend', p.bend);
         // source list: this track, sidechain, then every other track with Auto Malign
         const others = (s.tracks || []).filter(t => !t.self);

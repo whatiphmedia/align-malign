@@ -147,10 +147,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout AlignMalignProcessor::create
     l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppstrength", 1 }, "Malodics strength", NormalisableRange<float>(0.f, 1.f), 0.5f));
     l.add(std::make_unique<AudioParameterBool>(ParameterID{ "ppfold", 1 }, "Malodics sweet-spot folding", true));
     l.add(std::make_unique<AudioParameterBool>(ParameterID{ "ppfill", 1 }, "Malodics carrier fills gaps only", true));
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "pptame", 1 }, "Malodics tame", NormalisableRange<float>(0.f, 1.f), 0.6f));
+    l.add(std::make_unique<AudioParameterBool>(ParameterID{ "ppconst", 1 }, "Malodics constant", false));
     l.add(std::make_unique<AudioParameterInt>(ParameterID{ "pppartials", 1 }, "Malodics harmonics", 1, 6, 6));
-    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppattack", 1 }, "Malodics attack", NormalisableRange<float>(1.f, 500.f, 0.f, 0.4f), 15.f,
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppattack", 1 }, "Malodics attack", NormalisableRange<float>(1.f, 2000.f, 0.f, 0.4f), 40.f,
                                                 AudioParameterFloatAttributes().withLabel("ms")));
-    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "pprelease", 1 }, "Malodics release", NormalisableRange<float>(5.f, 3000.f, 0.f, 0.4f), 250.f,
+    l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "pprelease", 1 }, "Malodics release", NormalisableRange<float>(5.f, 8000.f, 0.f, 0.4f), 700.f,
                                                 AudioParameterFloatAttributes().withLabel("ms")));
     l.add(std::make_unique<AudioParameterFloat>(ParameterID{ "ppglide", 1 }, "Malodics glide", NormalisableRange<float>(0.f, 1000.f, 0.f, 0.4f), 0.f,
                                                 AudioParameterFloatAttributes().withLabel("ms")));
@@ -200,6 +202,9 @@ AlignMalignProcessor::AlignMalignProcessor()
     pPpFold_ = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("ppfold"));
     pPpFill_ = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("ppfill"));
     jassert(pPpFill_);
+    pPpTame_ = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("pptame"));
+    pPpConst_ = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("ppconst"));
+    jassert(pPpTame_ && pPpConst_);
     pPpPartials_ = dynamic_cast<juce::AudioParameterInt*>(apvts.getParameter("pppartials"));
     jassert(pPpMode_ && pPpSource_ && pPpAssist_ && pPpCarrier_ && pPpStrength_ && pPpAttack_ && pPpRelease_ && pPpGlide_ && pPpBend_ && pPpFold_ && pPpPartials_);
     for (auto& n : ppSounding_) n.store(-1);
@@ -427,6 +432,8 @@ void AlignMalignProcessor::updatePhantomParams() {
     p.strength = pPpStrength_->get();
     p.fold = pPpFold_->get();
     p.fillGaps = pPpFill_->get();
+    p.tame = pPpTame_->get();
+    p.constant = pPpConst_->get();
     p.partials = pPpPartials_->get();
     p.attackMs = pPpAttack_->get();
     p.releaseMs = pPpRelease_->get();
@@ -607,6 +614,8 @@ juce::var AlignMalignProcessor::makeUIState() {
         pp->setProperty("strength", pPpStrength_->get());
         pp->setProperty("fold", pPpFold_->get());
         pp->setProperty("fill", pPpFill_->get());
+        pp->setProperty("tame", pPpTame_->get());
+        pp->setProperty("constant", pPpConst_->get());
         pp->setProperty("partials", pPpPartials_->get());
         pp->setProperty("attack", pPpAttack_->get());
         pp->setProperty("release", pPpRelease_->get());

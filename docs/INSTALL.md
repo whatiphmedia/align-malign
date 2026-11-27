@@ -105,8 +105,11 @@ Play pitches made of stereo phase with MIDI. Best on headphones.
   to ride on; follows velocity. **Carrier fills gaps only** (on): noise is added only where the track itself has
   little sound around the note, so a full mix gets almost none and sparse sounds (hats) still get it.
   **Strength:** width of the phase sweep and the mono zone. **Fold notes into the sweet spot:** keeps each note name
-  but moves it to 250–600 Hz, where the ears follow phase best. **Harmonics**, **Attack**, **Release**, **Glide**,
-  **Pitch bend range**; the sustain pedal holds notes.
+  but moves it to 250–600 Hz, where the ears follow phase best. **Tame** (60%): a limiter on what the notes add,
+  set relative to the track's level, so a note that rings up hard is held at a steady level instead of jumping out.
+  **Constant** (off): the last notes keep sounding through gaps until the next note arrives, at a steadier level.
+  **Attack** (40 ms) and **Release** (700 ms) fade each note in and out on a smooth S-curve (up to 2 s and 8 s).
+  **Harmonics**, **Glide**, **Pitch bend range**; the sustain pedal holds notes.
 - **Source:** what feeds the carrier and resonators: *This track + noise* (default), the *Sidechain input* (enable
   it in the host: Live's Sidechain section, Studio One's sidechain button), or *any other track with Auto Malign on
   it* (no routing needed; works while the transport plays).

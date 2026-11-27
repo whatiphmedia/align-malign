@@ -28,7 +28,9 @@ struct PhantomParams {
     float strength = 0.5f;     // 0..1: band width of the phase sweep (8..20 % of the note) and of the mono zone
     bool fold = true;          // move every note into 250..600 Hz, where the ears follow phase best
     int partials = 6;          // harmonics per note (1..6), up to 1.5 kHz
-    float attackMs = 15.f, releaseMs = 250.f;
+    float attackMs = 40.f, releaseMs = 700.f;   // smooth (S-curve) fade in and out
+    float tame = 0.6f;         // 0..1: limiter on what the notes add, relative to the track (tames resonant peaks)
+    bool constant = false;     // keep the last notes sounding through gaps until the next note arrives
     float glideMs = 0.f;       // 0 = jump; else each new note starts from the last pitch and glides
     float bendRange = 2.f;     // semitones for full pitch bend
 };
@@ -47,6 +49,7 @@ public:
         lastFreq_ = 0;
         bend_ = bendTarget_ = 0;
         sustain_ = false;
+        lastGain_ = 1; limEnv_ = 0; limGain_ = 1; rmsSlow_ = 1e-6;
     }
     void setParams(const PhantomParams& p) { p_ = p; }
     int64_t clock() const { return clock_; }               // next output sample index
@@ -56,7 +59,7 @@ public:
     void noteOff(int note, int64_t at) { push({ at, Ev::Off, note, 0 }); }
     void pitchBend(float v, int64_t at) { push({ at, Ev::Bend, 0, v }); }       // -1..1
     void sustainPedal(bool down, int64_t at) { push({ at, Ev::Sustain, 0, down ? 1.f : 0.f }); }
-    void allOff() { for (auto& v : voices_) v.held = false, v.releasing = v.active; events_.clear(); sustain_ = false; }
+    void allOff() { for (auto& v : voices_) v.held = v.latched = false, v.releasing = v.active; events_.clear(); sustain_ = false; }
 
     bool busy() const { for (auto& v : voices_) if (v.active) return true; return !events_.empty(); }
     // notes currently sounding (for the interface)
@@ -94,7 +97,7 @@ private:
         void reset() { z1 = z2 = 0; }
     };
     struct Voice {
-        bool active = false, held = false, releasing = false;
+        bool active = false, held = false, releasing = false, latched = false;   // latched: held on by Constant
         int note = 0; float vel = 1; double env = 0;
         double f = 440, fTarget = 440, fApplied = 0;
         std::array<Biquad, kPartials> ap, collapse, car;   // phase sweep (left), mono zone (side), carrier band
@@ -117,11 +120,17 @@ private:
     }
     void apply(const Ev& e) {
         if (e.kind == Ev::Bend) { bendTarget_ = std::clamp(e.v, -1.f, 1.f); return; }
-        if (e.kind == Ev::Sustain) { sustain_ = e.v > 0.5f; if (!sustain_) for (auto& v : voices_) if (v.active && !v.held) v.releasing = true; return; }
+        if (e.kind == Ev::Sustain) { sustain_ = e.v > 0.5f; if (!sustain_) for (auto& v : voices_) if (v.active && !v.held && !v.latched) v.releasing = true; return; }
         if (e.kind == Ev::Off || (e.kind == Ev::On && e.v <= 0)) {
-            for (auto& v : voices_) if (v.active && v.note == e.note && v.held) { v.held = false; if (!sustain_) v.releasing = true; }
+            for (auto& v : voices_) if (v.active && v.note == e.note && v.held) {
+                v.held = false;
+                if (p_.constant) v.latched = true;          // keeps sounding until the next note arrives
+                else if (!sustain_) v.releasing = true;
+            }
             return;
         }
+        // Constant: a new note takes over from the notes kept on through the gap (they fade out on the release)
+        for (auto& c : voices_) if (c.active && c.latched && c.note != e.note) { c.latched = false; c.releasing = true; }
         Voice* v = nullptr;
         for (auto& c : voices_) if (c.active && c.note == e.note) { v = &c; break; }      // retrigger
         if (!v) for (auto& c : voices_) if (!c.active) { v = &c; break; }
@@ -129,10 +138,10 @@ private:
         const bool fresh = !v->active;
         double f = noteHz(e.note);
         if (p_.fold) f = foldHz(f);
-        v->note = e.note; v->vel = std::clamp(e.v, 0.f, 1.f); v->held = true; v->releasing = false; v->fTarget = f;
+        v->note = e.note; v->vel = std::clamp(e.v, 0.f, 1.f); v->held = true; v->releasing = false; v->latched = false; v->fTarget = f;
         if (fresh) {
             v->f = (p_.glideMs > 0 && lastFreq_ > 0) ? lastFreq_ : f;
-            v->env = 0; v->fApplied = 0; v->gain = 0; v->ry = 1e-9; v->lp1 = 0; v->cw = 0;
+            v->env = 0; v->fApplied = 0; v->gain = lastGain_; v->ry = -1; v->lp1 = 0; v->cw = 0;
             std::fill(v->comb.begin(), v->comb.end(), 0.f);
             for (auto* bank : { &v->ap, &v->collapse, &v->car, &v->clean, &v->own }) for (auto& b : *bank) b.reset();
             v->ownMs.fill(0); v->carMs.fill(0); v->fill.fill(1);
@@ -182,6 +191,10 @@ private:
         for (auto& v : voices_) any |= v.active;
         if (!any) return;                                   // untouched when nothing sounds
         const double att = 1.0 / std::max(1.0, p_.attackMs * 1e-3 * sr_), rel = 1.0 / std::max(1.0, p_.releaseMs * 1e-3 * sr_);
+        const double tame = std::clamp((double)p_.tame, 0.0, 1.0);
+        const double ryUp = 1.0 - std::exp(-1.0 / (0.02 * sr_));              // resonator level: rises fast, falls slowly
+        const double slowA = 1.0 - std::exp(-1.0 / (1.5 * sr_));
+        const double limRel = std::exp(-1.0 / (0.15 * sr_)), limAtt = 1.0 - std::exp(-1.0 / (0.001 * sr_)), limRec = 1.0 - std::exp(-1.0 / (0.12 * sr_));
         const double glideA = p_.glideMs > 0 ? 1.0 - std::exp(-1.0 / (p_.glideMs * 1e-3 * sr_)) : 1.0;
         const double bendA = 1.0 - std::exp(-1.0 / (0.005 * sr_));
         const double rmsA = 1.0 - std::exp(-1.0 / (0.3 * sr_));
@@ -193,6 +206,8 @@ private:
             float l = L[i], r = R ? R[i] : L[i];
             double M = 0.5 * (l + r), S = 0.5 * (l - r);
             rmsM_ += (M * M - rmsM_) * rmsA;
+            rmsSlow_ += (M * M - rmsSlow_) * slowA;
+            const double level = std::sqrt(p_.constant ? std::max(rmsM_, rmsSlow_) : rmsM_);   // Constant: steadier level
             const double xs = sL ? 0.5 * ((double)sL[i] + (sR ? sR[i] : sL[i])) : M;   // what feeds carrier and resonators
             if (sL) rmsSrc_ += (xs * xs - rmsSrc_) * rmsA;
             const double srcNorm = sL ? std::min(8.0, std::sqrt(rmsM_ / std::max(rmsSrc_, 1e-12))) : 1.0;
@@ -208,7 +223,7 @@ private:
                 v.f += (v.fTarget - v.f) * glideA;
                 const double f = v.f * bendMul;
                 if ((std::abs(f - v.fApplied) > 1e-4 * f || std::abs(p_.purity - v.purityCar) > 0.02) && ((i & 31) == 0 || v.fApplied == 0)) retune(v, f);
-                const double e = v.env, depth = 0.3 + 0.7 * v.vel;
+                const double e = v.env * v.env * (3.0 - 2.0 * v.env), depth = 0.3 + 0.7 * v.vel;   // S-curve fades
                 // resonator (both modes): tuned comb fed by the music, added to the side only
                 const double ex = v.lp.run(v.hp.run((float)(xs * srcNorm))) * e;
                 const double D = std::min(sr_ / f, (double)v.comb.size() - 3); const int d0 = (int)D; const double fr = D - d0; const int N = (int)v.comb.size();
@@ -224,10 +239,15 @@ private:
                 double tonal = 0;
                 for (int k = 0; k < v.nClean; ++k) tonal += v.clean[(size_t)k].run((float)ring);
                 const double out = ring + pur * (tonal - ring);
-                v.ry += (out * out - v.ry) * rmsA;
+                const double o2 = out * out;
+                if (v.ry < 0) v.ry = o2 + 1e-12;
+                v.ry += (o2 - v.ry) * (o2 > v.ry ? ryUp : rmsA);
                 if (!v.releasing) {                         // level: Assist x 0.29 x the music's level (held while releasing)
-                    const double want = 0.29 * std::sqrt(rmsM_) / std::sqrt(std::max(v.ry, 1e-12));
-                    v.gain += (std::min(16.0, want) - v.gain) * 0.001;
+                    const double want = 0.29 * level / std::sqrt(std::max(v.ry, 1e-12));
+                    const double maxG = 16.0 - 12.0 * tame;   // less make-up gain on a barely excited resonator
+                    const double gw = std::min(maxG, want);
+                    v.gain += (gw - v.gain) * (gw < v.gain ? 0.002 : 0.0002);   // cuts quickly, rises gently
+                    lastGain_ = v.gain;
                 }
                 assistSide += std::clamp(out * v.gain * p_.assist * depth, -1.0, 1.0);
                 if (!p_.huggins) continue;
@@ -254,10 +274,10 @@ private:
             // cap the total carrier at Carrier x the track's level however many notes overlap (a single note sits
             // far below this, so it only acts on big chords)
             carRms_ += (carrierMid * carrierMid - carRms_) * carA;
-            const double cap = std::max(p_.carrier, 0.f) * std::sqrt(rmsM_);
+            const double cap = std::max(p_.carrier, 0.f) * level;
             const double cg = carRms_ > cap * cap ? cap / std::sqrt(carRms_) : 1.0;
             carGain_ += (cg - carGain_) * (cg < carGain_ ? 0.05 : 0.0005);
-            const double c = carrierMid * carGain_, lim = 3.0 * cap + 1e-9;   // and round off its noise spikes
+            const double c = carrierMid * carGain_, lim = (3.0 - 1.5 * tame) * cap + 1e-9;   // and round off its noise spikes
             M += lim * std::tanh(c / lim);
             double outL = M + S, outR = M - S;
             if (hug) {
@@ -268,7 +288,17 @@ private:
                 }
                 outL = Lh;
             }
-            const double as = std::clamp(assistSide, -1.0, 1.0);   // safety ceiling on what the resonators add
+            // Tame: a limiter on what the resonators add, set relative to the track's level, so a note that rings
+            // up hard is held at a steady level instead of jumping out (0 = only extreme spikes, 1 = held close to a
+            // steady tone); then rounded off so nothing slips through before the limiter reacts
+            const double target = 0.29 * std::max(p_.assist, 0.01f) * level;
+            const double thr = target * (8.0 - 6.5 * tame) + 1e-9;
+            const double ax = std::abs(assistSide);
+            limEnv_ = std::max(ax, limEnv_ * limRel);
+            const double gT = limEnv_ > thr ? thr / limEnv_ : 1.0;
+            limGain_ += (gT - limGain_) * (gT < limGain_ ? limAtt : limRec);
+            const double soft = 1.6 * thr;
+            const double as = std::clamp(soft * std::tanh(assistSide * limGain_ / soft), -1.0, 1.0);   // safety ceiling
             // safety ceiling while notes sound: untouched up to 0 dBFS, rounded off above, never past +6 dBFS
             auto ceil = [](double x) { const double ax = std::abs(x); return ax <= 1.0 ? x : std::copysign(1.0 + std::tanh(ax - 1.0), x); };
             L[i] = (float)ceil(outL + as);
@@ -285,6 +315,7 @@ private:
     double carRms_ = 0, carGain_ = 1;
     double rmsM_ = 1e-6, rmsSrc_ = 1e-6, lastFreq_ = 0, bend_ = 0, bendTarget_ = 0;
     bool sustain_ = false;
+    double lastGain_ = 1, limEnv_ = 0, limGain_ = 1, rmsSlow_ = 1e-6;
     std::mt19937 rng_{ 1234 };
     std::normal_distribution<double> nd_{ 0.0, 1.0 };
 };

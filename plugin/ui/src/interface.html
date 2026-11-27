@@ -1322,8 +1322,10 @@ const REFINE={
    {t:'switch',k:'ppfill',name:'Carrier fills gaps only',v:true,hint:'Adds carrier noise only where the track itself has little sound around the note. A full mix needs almost none; sparse sounds like hats still get it.'},
    {t:'switch',k:'ppfold',name:'Fold notes into the sweet spot (250–600 Hz)',v:true,hint:'Keeps each note name but moves it to where the ears follow phase best.'},
    {t:'range',k:'pppartials',name:'Harmonics',min:1,max:6,step:1,v:6,fmt:v=>`${v}`},
-   {t:'range',k:'ppattack',name:'Attack',min:1,max:500,step:1,v:15,fmt:fmtMs},
-   {t:'range',k:'pprelease',name:'Release',min:5,max:3000,step:5,v:250,fmt:fmtMs},
+   {t:'range',k:'pptame',name:'Tame',min:0,max:1,step:0.01,v:0.6,fmt:pct,hint:'A limiter on what the notes add, set relative to the track. Holds down resonant peaks so a note that rings up hard stays at a steady level. 0% only catches extreme spikes.'},
+   {t:'switch',k:'ppconst',name:'Constant',v:false,hint:'Keeps the last notes sounding through gaps until the next note arrives, at a steadier level. Off: each note fades out on its release when the MIDI note ends.'},
+   {t:'range',k:'ppattack',name:'Attack',min:1,max:2000,step:1,v:40,fmt:fmtMs,hint:'Fade-in time of each note (an S-curve, so it starts gently).'},
+   {t:'range',k:'pprelease',name:'Release',min:5,max:8000,step:5,v:700,fmt:fmtMs,hint:'Fade-out time after the note ends.'},
    {t:'range',k:'ppglide',name:'Glide',min:0,max:1000,step:1,v:0,fmt:v=>v?fmtMs(v):'Off'},
    {t:'range',k:'ppbend',name:'Pitch bend range',min:0,max:24,step:1,v:2,fmt:v=>`±${v} st`},
    {t:'select',k:'ppsource',name:'Source',opts:['This track + noise','Sidechain input'],v:0,hint:'What feeds the carrier and the resonators: this track (with noise as carrier), the sidechain input, or any other track with Auto Malign on it.'}]};
