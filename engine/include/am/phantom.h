@@ -227,7 +227,8 @@ private:
                     nz = (ud_(rng_) < r) ? (ud_(rng_) < 0.5 ? -1.0 : 1.0) * (0.5 + ud_(rng_)) / std::sqrt(r * 0.583) : 0.0; break; }
                 default: break;
             }
-            const double noise = nz * std::sqrt(rmsM_);
+            static constexpr double kFlavourLevel[4] = { 1.0, 0.45, 0.71, 1.0 };   // level-matched to Hiss in the note bands
+            const double noise = nz * std::sqrt(rmsM_) * kFlavourLevel[std::clamp(p_.noiseFlavour, 0, 3)];
             double assistSide = 0, carrierMid = 0;
             double Lh = 0; bool hug = false;
             for (auto& v : voices_) {
@@ -280,7 +281,7 @@ private:
                     S -= v.hug * v.collapse[(size_t)k].run((float)S);
                     double nin = noise;
                     if (p_.noiseFlavour == 3 && !sL)   // Pitched: a tone on the harmonic whose phase wanders (~10 Hz wide), plus a little hiss
-                        nin = 0.45 * noise + 1.26 * std::sqrt(rmsM_) * std::cos(v.ph * (k + 1) + v.drift * (k + 1));
+                        nin = 0.11 * noise + 0.32 * std::sqrt(rmsM_) * std::cos(v.ph * (k + 1) + v.drift * (k + 1));   // level-matched
                     const double c = v.car[(size_t)k].run((float)(sL ? xs * srcNorm : nin));
                     double fill = 1.0;
                     if (p_.fillGaps && !sL) {
