@@ -126,3 +126,33 @@ target_link_libraries(AlignMalign
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags)
+
+# ---------------------------------------------------------------- Auto Malign Studio (standalone stem session)
+juce_add_gui_app(AutoMalignStudio
+  COMPANY_NAME "KracKill$"
+  PRODUCT_NAME "Auto Malign Studio"
+  BUNDLE_ID com.whatiphmedia.automalignstudio
+  NEEDS_WEBVIEW2 TRUE)
+juce_generate_juce_header(AutoMalignStudio)
+juce_add_binary_data(AutoMalignStudioUI SOURCES app/ui/studio.html)
+set_target_properties(AutoMalignStudioUI PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_sources(AutoMalignStudio PRIVATE app/StudioApp.cpp)
+target_compile_definitions(AutoMalignStudio PRIVATE
+  JUCE_WEB_BROWSER=1
+  JUCE_USE_CURL=0
+  JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1
+  JUCE_APPLICATION_NAME_STRING="Auto Malign Studio"
+  JUCE_APPLICATION_VERSION_STRING="0.1.0"
+  _USE_MATH_DEFINES)
+if(MSVC)
+  target_compile_options(AutoMalignStudio PRIVATE /bigobj)
+endif()
+target_link_libraries(AutoMalignStudio
+  PRIVATE
+    AutoMalignStudioUI
+    am_engine
+    juce::juce_audio_utils
+    juce::juce_gui_extra
+  PUBLIC
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags)

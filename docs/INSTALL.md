@@ -141,3 +141,49 @@ master); group buses and the master are left out automatically.
 | Envelop | Rotates the sides below 300 Hz: wide low end, mono-safe |
 | Curve | Aligned, then bent into a slow phase wave across octaves |
 | Disperse | Scatters each track's phase per third-octave band |
+
+## Auto Malign Studio (standalone stem session)
+`Auto Malign Studio.exe` works on a folder of stems outside your DAW: it learns the whole song first, so everything is
+exact and nothing runs live.
+
+1. **Export your stems** from Live or Studio One as WAV files from the same start point, into one folder. Include the
+   instrumental and, if you like, printed effect returns.
+2. **Open stems** and choose the folder. Studio learns every track (phrases and gaps, consonants, pitch, tempo, key) and
+   which takes double which. Check the roles on the left and change any of them:
+   - **Lead:** a voice other takes follow.
+   - **Double:** follows its lead (choose which); gets the flam fix and split.
+   - **Beat:** gets the phase pocket.
+   - **Return:** a printed effect return (mute it if you use the native returns instead).
+   - **Other:** anything else.
+3. **Mixing / Producer** switches what the right-hand panel shows. Everything you turn on is in the sound, whichever mode
+   you are in.
+   - **Mixing:** Doubles (flam fix, differences, sides only), delay throws (gated, darkening into the next line), gap
+     bloom, phase pocket, triggers, native returns, master.
+   - **Producer:** freeze, shimmer (formant, tilt, breath, inside-out), roll (Pre/Post/Both with start and end in tempo or
+     ms, plus pitch, filter, drive, level, gate, crush, stereo and reverse modulation), reverse reverb (lands on the
+     entrance), call and response (with bleed), Ghost notes (interval, key chord, level), triggers.
+4. **Triggers** decide which gaps fire the learned effects, and how hard:
+   - **Sensitivity:** what counts as a gap.
+   - **Shortest gap** and **Min line:** ignore short gaps, or react only after long lines.
+   - **Min entrance:** react only when the voice comes back hard.
+   - **Held notes only:** react only after lines that end on a held, sung note.
+   - **Every Nth** and **Chance:** variation.
+   - **Dynamics:** the effect follows the loudness of the word or entrance it reacts to.
+5. **Listen** with **Processed / Original** (A/B, the O key) and **Mono** (the M key). Space plays; Ctrl+Z / Ctrl+Shift+Z undo
+   and redo. Ctrl+click or double-click a control to reset it.
+6. **Re-learn a section:** after you replace or edit part of a stem, Shift-drag over that part of the timeline and press
+   **Re-learn section** (all tracks, or one). Only that section is recomputed.
+7. **Export** writes every processed stem, each effect layer and native return, and the mix (24-bit WAV) to a folder. Bring
+   them back into your DAW. **Save** keeps the session (`.amsession`: settings, roles, sends and where the stems are).
+
+The timeline colours waveforms by frequency, like KracKill$ Vision: red is lows (under 200 Hz), green is mids, blue is
+highs (above 2 kHz).
+
+**Debug log:** the **Log** button opens everything Studio does, with timings. It is also written to
+`%APPDATA%\AutoMalignStudio\studio.log`; **Show file** opens that folder.
+
+**Command line:** `amsession.exe <stems folder> [--preset "Name"] [--set id=value] [--out folder]` runs the same engine
+without the window. `amsession.exe x --list` lists every preset and parameter.
+
+**Known issue:** on Windows the "never make it worse" guard can leave a few frequency bands (under 1%) slightly worse.
+The test allows this for now; it will be revisited with multi-mic drum stems.

@@ -94,15 +94,16 @@ public:
         if (field == "gainDb") t.gainDb = v; else if (field == "pan") t.pan = std::clamp(v, -1.0, 1.0); else if (field == "mute") t.mute = v > 0.5; else if (field == "solo") t.solo = v > 0.5;
         else if (field == "role") t.role = (int)v; else if (field == "ref") t.ref = (int)v; else if (field == "sendRevDb") t.sendRevDb = v; else if (field == "sendDlyDb") t.sendDlyDb = v;
         else { AM_LOG(Warn) << "unknown track field " << field; return false; }
-        if (field == "role" || field == "ref") cache_.clear();
         AM_LOG(Debug) << "track " << t.name << " " << field << " = " << v; return true;
     }
+    // After role changes the vocal stack is a different set of tracks: learn it again (worker thread).
+    void relearnVocals() { learnSession(); }
     bool applyPresetNamed(const std::string& name) {
         ProjectState before = state; if (!applyPreset(state, name)) { AM_LOG(Warn) << "unknown preset " << name; return false; }
         history.push(before, "Preset: " + name); history.breakMerge(); AM_LOG(Info) << "preset " << name; return true;
     }
-    bool undo() { const auto l = history.undoLabel(); if (!history.undo(state)) return false; cache_.clear(); AM_LOG(Info) << "undo: " << l; return true; }
-    bool redo() { const auto l = history.redoLabel(); if (!history.redo(state)) return false; cache_.clear(); AM_LOG(Info) << "redo: " << l; return true; }
+    bool undo() { const auto l = history.undoLabel(); if (!history.undo(state)) return false; AM_LOG(Info) << "undo: " << l; return true; }
+    bool redo() { const auto l = history.redoLabel(); if (!history.redo(state)) return false; AM_LOG(Info) << "redo: " << l; return true; }
 
     // ------------------------------------------------------------ save / load the session file
     bool saveProject(const std::string& path) const { std::ofstream f(path); f << toJson(state); AM_LOG(Info) << "saved " << path; return (bool)f; }
@@ -118,12 +119,17 @@ public:
     }
 
     // ------------------------------------------------------------ render
-    RenderResult render() {
-        RenderResult R; const size_t n = length(); const ProjectState& s = state;
+    RenderResult render() { return render(state); }
+    // Renders from a snapshot of the state, so an app can keep editing `state` on its UI thread while a worker renders.
+    // (Caches and learned data are only touched by the thread that renders/learns.)
+    RenderResult render(const ProjectState& snap) {
+        RenderResult R; const size_t n = length(); const ProjectState& s = snap;
+        if (cache_.size() > 64) cache_.clear();
         R.mix = Stereo(n); R.original = Stereo(n); R.stems.assign(audio.size(), Stereo(n));
         bool anySolo = false; for (auto& t : s.tracks) anySolo |= t.solo;
         auto audible = [&](size_t i) { return !s.tracks[i].mute && (!anySolo || s.tracks[i].solo); };
         for (size_t i = 0; i < audio.size(); ++i) if (audible(i)) R.original.add(audio[i]);
+        const float master = (float)dbToGain(s.masterDb); R.original.scale(master);
         if (s.bypass) { R.mix = R.original; return R; }
         Stereo side(n);   // side-only content (L = +, R = -)
         // tracks with gain/pan
@@ -140,7 +146,7 @@ public:
                 if (t.role != TrackState::Double || t.ref < 0 || t.ref >= (int)audio.size() || !audible(i)) continue;
                 const auto& src = R.stems[i]; double el = 0, er = 0; for (size_t k = 0; k < n; ++k) { el += (double)src.L[k] * src.L[k]; er += (double)src.R[k] * src.R[k]; }
                 const double gl = std::sqrt(el / n), gr = std::sqrt(er / n), tot = gl + gr + 1e-12; const float pl = (float)(gl / tot), pr = (float)(gr / tot), cg = 0.5f * (pl + pr);
-                auto& sp = doublesFor((int)i, t.ref, s.flamAmount, src);
+                auto& sp = doublesFor(s, (int)i, t.ref, s.flamAmount, src);
                 Stereo y(n);
                 for (size_t k = 0; k < n; ++k) {
                     const float c = sp.common[k], d = (float)(sp.difference[k] * s.agreement);
@@ -159,7 +165,7 @@ public:
             if (t.sendDlyDb > -100) dlyIn.add(x, (float)dbToGain(t.sendDlyDb));
         }
         for (size_t k = 0; k < n; ++k) { vocals.L[k] += side.L[k]; vocals.R[k] -= side.L[k]; }
-        rederiveIfNeeded(); const auto& VL = vocalsLearned; const auto singing = singingGate(VL, n);
+        rederiveIfNeeded(s); const auto& VL = vocalsLearned; const auto singing = singingGate(VL, n);
         // phase pocket on the beat tracks
         if (s.pocketOn && beat.energy() > 0) {
             PocketSettings ps; ps.amount = s.pocketAmount; ps.attackMs = s.pocketAttackMs; ps.releaseMs = s.pocketReleaseMs; auto pb = pocketFx(beat, vocals, ps, sr);
@@ -170,33 +176,34 @@ public:
         // producer effects on the vocal source
         Stereo fxSum(n);
         const Stereo src = (s.fxSource >= 0 && s.fxSource < (int)audio.size()) ? R.stems[(size_t)s.fxSource] : vocals;
-        rederiveIfNeeded();
+        rederiveIfNeeded(s);
         TriggerSettings trig; trig.minPhraseS = s.trigMinPhraseS; trig.minEntranceDb = s.trigMinEntranceDb; trig.sustainedOnly = s.trigSustainedOnly; trig.everyN = s.trigEveryN; trig.probability = s.trigProbability; trig.dynamics = s.trigDynamics;
         const TrackLearn SL = applyTriggers((s.fxSource >= 0 && s.fxSource < (int)learned.size()) ? learned[(size_t)s.fxSource] : vocalsLearned, trig);
         const TrackLearn VT = applyTriggers(vocalsLearned, trig);
         auto addLayer = [&](const std::string& name, Stereo y) { fxSum.add(y); R.layers.push_back({ name, std::move(y) }); };
         if (s.freezeOn) { FreezeSettings f; f.gapsOnly = s.freezeGaps; f.level = s.freezeLevel; addLayer("Freeze", freezeFx(src, SL, f)); }
         if (s.shimmerOn) { ShimmerSettings h; h.semitones = s.shimSemis; h.formant = s.shimFormant; h.tiltDbOct = s.shimTilt; h.breath = s.shimBreath; h.insideOut = s.shimInsideOut; h.level = s.shimLevel; addLayer("Shimmer", shimmerFx(src, h, sr)); }
-        if (s.rollOn) addLayer("Roll", rollFx(src, SL, rollSettings(s), bpm(), sr));
+        if (s.rollOn) addLayer("Roll", rollFx(src, SL, rollSettings(s), s.bpm > 0 ? s.bpm : learnedBpm, sr));
         if (s.rrOn) { ReverseReverbSettings rr; rr.sourceS = s.rrSourceS; rr.maxPreS = s.rrMaxPreS; rr.level = s.rrLevel; rr.decayS = s.rrDecayS; rr.landMs = s.rrLandMs; addLayer("Reverse reverb", reverseReverbFx(src, SL, rr, sr)); }
-        if (s.responseOn) { ResponseSettings rs; rs.kind = (ResponseSettings::Kind)s.responseKind; rs.level = s.responseLevel; rs.attackMs = s.responseAttackMs; rs.releaseS = s.responseReleaseS; rs.bleed = s.responseBleed; rs.bleedDuckDb = s.responseDuckDb; addLayer("Call and response", responseFx(src, SL, rs, bpm(), sr)); }
+        if (s.responseOn) { ResponseSettings rs; rs.kind = (ResponseSettings::Kind)s.responseKind; rs.level = s.responseLevel; rs.attackMs = s.responseAttackMs; rs.releaseS = s.responseReleaseS; rs.bleed = s.responseBleed; rs.bleedDuckDb = s.responseDuckDb; addLayer("Call and response", responseFx(src, SL, rs, s.bpm > 0 ? s.bpm : learnedBpm, sr)); }
         if (s.ghostOn) addLayer("Ghost notes", ghostNotes(src, SL, s));
         revIn.add(fxSum, (float)dbToGain(s.fxSendRevDb));
         // native returns
         Stereo rev = reverb(s).process(revIn); rev.scale((float)dbToGain(s.revLevelDb));
         if (s.gapReverbOn) for (size_t k = 0; k < n; ++k) { const float d = (float)(1 - s.gapDuck * singing[k]); rev.L[k] *= d; rev.R[k] *= d; }
         DelaySettings ds; ds.time = { true, divFromIndex(s.dlyDiv), false, s.dlyDotted > 0.5 }; ds.feedback = s.dlyFeedback;
-        Stereo dly = delayFx(dlyIn, ds, bpm(), sr); dly.scale((float)dbToGain(s.dlyLevelDb));
+        const double tempo = s.bpm > 0 ? s.bpm : learnedBpm;
+        Stereo dly = delayFx(dlyIn, ds, tempo, sr); dly.scale((float)dbToGain(s.dlyLevelDb));
         if (revIn.energy() > 0) R.layers.push_back({ "Reverb return", rev });
         if (dlyIn.energy() > 0) R.layers.push_back({ "Delay return", dly });
         if (s.throwsOn) {
             ThrowSettings ts; ts.delay.time = { true, divFromIndex(s.throwDiv), false, s.throwDotted > 0.5 }; ts.delay.feedback = s.throwFeedback; ts.level = s.throwLevel; ts.falloff = (ThrowSettings::Falloff)s.throwFalloff; ts.fadeS = s.throwFadeS; ts.darken = s.throwDarken > 0.5;
-            Stereo th = throwsFx(vocals, VT, ts, bpm(), sr); R.layers.push_back({ "Delay throws", th }); R.mix.add(th);
+            Stereo th = throwsFx(vocals, VT, ts, tempo, sr); R.layers.push_back({ "Delay throws", th }); R.mix.add(th);
         }
         // mix
         for (size_t i = 0; i < audio.size(); ++i) if (audible(i)) R.mix.add(R.stems[i]);
         for (size_t k = 0; k < n; ++k) { R.mix.L[k] += side.L[k]; R.mix.R[k] -= side.L[k]; }
-        R.mix.add(fxSum); R.mix.add(rev); R.mix.add(dly);
+        R.mix.add(fxSum); R.mix.add(rev); R.mix.add(dly); R.mix.scale(master);
         AM_LOG(Debug) << "rendered " << n / (double)sr << " s, " << R.layers.size() << " layers, peak " << gainToDb(R.mix.peak()) << " dBFS";
         return R;
     }
@@ -283,14 +290,14 @@ private:
         learnedBpm = learnTempo(tl); learnedKey = learnKey(keySrc.mono(), sr);
         AM_LOG(Info) << "session: tempo " << learnedBpm << " BPM, key " << learnedKey.name() << ", vocal phrases " << vocalsLearned.phrases.size() << ", gaps " << vocalsLearned.gaps.size();
     }
-    SplitCache& doublesFor(int d, int ref, double flam, const Stereo& srcNow) {
-        const std::string k = std::to_string(d) + "|" + std::to_string(ref) + "|" + num(flam) + "|" + num(state.tracks[(size_t)d].gainDb) + "|" + num(state.tracks[(size_t)d].pan);
+    SplitCache& doublesFor(const ProjectState& st, int d, int ref, double flam, const Stereo& srcNow) {
+        const std::string k = std::to_string(d) + "|" + std::to_string(ref) + "|" + num(flam) + "|" + num(st.tracks[(size_t)d].gainDb) + "|" + num(st.tracks[(size_t)d].pan);
         auto it = cache_.find(k); if (it != cache_.end()) return it->second;
         std::vector<float> m(srcNow.size()), rm(srcNow.size());
         for (size_t i = 0; i < m.size(); ++i) { m[i] = srcNow.L[i] + srcNow.R[i]; rm[i] = audio[(size_t)ref].L[i] + audio[(size_t)ref].R[i]; }
         FlamReport rep; auto f = flamFix(m, rm, learned[(size_t)ref], learned[(size_t)d], sr, flam, &rep);
         auto sp = split(f, rm);
-        AM_LOG(Info) << "doubles: " << state.tracks[(size_t)d].name << " -> " << state.tracks[(size_t)ref].name << ": overall " << rep.overallMs << " ms, " << rep.moved << "/" << rep.considered
+        AM_LOG(Info) << "doubles: " << st.tracks[(size_t)d].name << " -> " << st.tracks[(size_t)ref].name << ": overall " << rep.overallMs << " ms, " << rep.moved << "/" << rep.considered
                      << " syllables moved, consonant alignment " << rep.alignBefore << " -> " << rep.alignAfter;
         return cache_[k] = { std::move(sp.common), std::move(sp.difference) };
     }
@@ -313,7 +320,7 @@ private:
         PhantomNotes pn; pn.prepare(sr); PhantomParams p; p.huggins = false; p.assist = (float)s.ghostAssist; p.drive = (float)s.ghostDrive; p.constant = true; p.attackMs = 60; p.releaseMs = 1200; pn.setParams(p);
         size_t notes = 0;
         if (s.ghostFromKey) {
-            const Key k = key(); const int root = 60 + k.tonic; for (int iv : { 0, k.minor ? 3 : 4, 7 }) { pn.noteOn(root + iv, 0.8f, 0); ++notes; }
+            const Key k = s.keyTonic >= 0 ? Key{ s.keyTonic, s.keyMinor != 0, 1 } : learnedKey; const int root = 60 + k.tonic; for (int iv : { 0, k.minor ? 3 : 4, 7 }) { pn.noteOn(root + iv, 0.8f, 0); ++notes; }
         } else for (auto& nt : SL.notes) { const int m = nt.midi + (int)std::lround(s.ghostRegister); pn.noteOn(m, nt.vel, (int64_t)nt.start); pn.noteOff(m, (int64_t)(nt.start + nt.len)); ++notes; }
         Stereo y = src; const int B = 512;
         for (size_t pos = 0; pos < y.size(); pos += B) pn.process(y.L.data() + pos, y.R.data() + pos, nullptr, nullptr, (int)std::min<size_t>(B, y.size() - pos));
@@ -322,13 +329,13 @@ private:
     }
     Reverb rev_; std::string revKey_; Stereo vocAudio_; std::string deriveKey_;
     // the sensitivity and gap/phrase lengths only change what is derived from the learned frames: re-derive, no re-learn
-    void rederiveIfNeeded() {
-        const std::string k = num(state.trigSensitivity) + "|" + num(state.trigMinGapS);
+    void rederiveIfNeeded(const ProjectState& st) {
+        const std::string k = num(st.trigSensitivity) + "|" + num(st.trigMinGapS);
         if (k == deriveKey_ || learned.size() != audio.size()) return;
-        learnSettings.onDb = (float)state.trigSensitivity; learnSettings.offDb = (float)state.trigSensitivity + 6; learnSettings.minGapS = (float)state.trigMinGapS;
+        learnSettings.onDb = (float)st.trigSensitivity; learnSettings.offDb = (float)st.trigSensitivity + 6; learnSettings.minGapS = (float)st.trigMinGapS;
         for (size_t i = 0; i < audio.size(); ++i) { deriveTrack(learned[i], learnSettings, audio[i].size()); refineEntrances(audio[i], learned[i]); }
         if (vocAudio_.size()) { deriveTrack(vocalsLearned, learnSettings, vocAudio_.size()); refineEntrances(vocAudio_, vocalsLearned); }
-        deriveKey_ = k; AM_LOG(Info) << "triggers: sensitivity " << state.trigSensitivity << " dB, shortest gap " << state.trigMinGapS << " s -> " << vocalsLearned.gaps.size() << " gaps";
+        deriveKey_ = k; AM_LOG(Info) << "triggers: sensitivity " << st.trigSensitivity << " dB, shortest gap " << st.trigMinGapS << " s -> " << vocalsLearned.gaps.size() << " gaps";
     }
 };
 

@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Auto Malign Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#050505; --panel:#0b0b0b; --line:#f2f2f2; --dim:#5c5c5c; --faint:#1c1c1c; --rule:#262626; --text:#f2f2f2; --muted:#9a9a9a;
+  --align:#39e6b0; --malign:#ff4fa3; --warn:#ffb547; --err:#ff5c5c;
+  --accent:var(--align);
+  --ui:"Archivo","Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+body.producer{--accent:var(--malign)}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:13px/1.35 var(--ui);overflow:hidden;user-select:none}
+button,select,input{font:inherit;color:inherit}
+button{background:none;border:1px solid var(--rule);padding:5px 10px;cursor:pointer;border-radius:2px}
+button:hover{border-color:var(--line)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+button:disabled{opacity:.35;cursor:default}
+button.on{border-color:var(--accent);color:var(--accent)}
+select{background:var(--panel);border:1px solid var(--rule);padding:4px 6px;border-radius:2px}
+#app{display:grid;grid-template-rows:52px 1fr 46px;height:100vh}
+/* header */
+header{display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid var(--rule)}
+.brand{font:700 15px var(--ui);font-stretch:125%;letter-spacing:.02em;white-space:nowrap}
+.brand b{color:var(--accent);font-weight:800}
+.brand small{font:500 11px var(--mono);color:var(--muted);margin-left:8px;letter-spacing:0}
+.sep{width:1px;height:24px;background:var(--rule)}
+.grow{flex:1}
+.seg{display:flex;border:1px solid var(--rule);border-radius:2px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:5px 12px}
+.seg button.on{background:var(--accent);color:#050505}
+#mode button[data-m="0"].on{background:var(--align)} #mode button[data-m="1"].on{background:var(--malign)}
+.readout{font:500 12px var(--mono);color:var(--muted);white-space:nowrap}
+.readout em{color:var(--text);font-style:normal}
+/* body */
+main{display:grid;grid-template-columns:330px 1fr 370px;min-height:0}
+section.col{min-height:0;display:flex;flex-direction:column;border-right:1px solid var(--rule)}
+section.col:last-child{border-right:0}
+.colhead{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--rule);font:600 12px var(--ui);color:var(--muted)}
+.scroll{overflow-y:auto;overflow-x:hidden;min-height:0;flex:1}
+.scroll::-webkit-scrollbar{width:6px} .scroll::-webkit-scrollbar-thumb{background:#2a2a2a}
+/* tracks */
+.trk{padding:7px 12px 6px;border-bottom:1px solid var(--rule);display:grid;grid-template-columns:1fr auto;gap:4px 8px;height:84px;align-content:start}
+#trkspacer{height:44px;flex:none;border-bottom:1px solid var(--rule);display:flex;align-items:flex-end;padding:0 12px 5px;font:11px var(--mono);color:var(--muted);gap:10px}
+#trkspacer i{display:inline-block;width:10px;height:10px;vertical-align:-1px;margin-right:4px}
+.trk.sel{background:#0e0e0e}
+.trk .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.trk .nm i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--dim)}
+.trk[data-role="1"] .nm i{background:var(--align)} .trk[data-role="2"] .nm i{background:transparent;border:2px solid var(--align)}
+.trk[data-role="3"] .nm i{background:var(--line)} .trk[data-role="4"] .nm i{background:#444}
+.trk .btns{display:flex;gap:4px}
+.trk .btns button{padding:1px 7px;font:600 11px var(--mono)}
+.trk .btns button.m.on{border-color:var(--warn);color:var(--warn)} .trk .btns button.s.on{border-color:var(--align);color:var(--align)}
+.trk .row2{grid-column:1/-1;display:flex;gap:5px;align-items:center;min-width:0}
+.trk .row2 select{font-size:12px;padding:2px 4px;max-width:150px}
+.mini{display:flex;align-items:center;gap:4px;font:11px var(--mono);color:var(--muted)}
+.mini input[type=range]{width:46px}
+/* timeline */
+#tl{position:relative;flex:1;min-height:0;cursor:crosshair}
+#tl canvas{position:absolute;inset:0;width:100%;height:100%}
+#selbar{display:none;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--rule);font:12px var(--mono)}
+#selbar.show{display:flex}
+#empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted);text-align:center;padding:24px}
+#empty h2{font:700 22px var(--ui);font-stretch:125%;color:var(--text);margin:0}
+#empty p{max-width:440px;margin:0}
+/* controls */
+.grp{border-bottom:1px solid var(--faint)}
+.grp>.gh{display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;font-weight:700}
+.grp>.gh .t{flex:1}
+.grp>.gh .chev{color:var(--muted);font:12px var(--mono)}
+.grp.closed>.gb{display:none}
+.gb{padding:2px 12px 10px}
+.ctl{display:grid;grid-template-columns:1fr 112px 58px;align-items:center;gap:8px;padding:3px 0}
+.ctl label{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctl .v{font:12px var(--mono);text-align:right;color:var(--text)}
+.ctl.pair{grid-template-columns:1fr 50px 50px 76px}
+.ctl.pair .v{font-size:11px;white-space:nowrap}
+input[type=range]{-webkit-appearance:none;appearance:none;height:16px;background:transparent;margin:0;width:100%}
+input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--rule)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;margin-top:-4px;background:var(--line);border-radius:50%}
+input[type=range]:hover::-webkit-slider-thumb{background:var(--accent)}
+.tog{width:30px;height:16px;border-radius:8px;border:1px solid var(--dim);position:relative;cursor:pointer;flex:none;padding:0}
+.tog::after{content:"";position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;background:var(--dim);transition:left .12s}
+.tog.on{border-color:var(--accent)} .tog.on::after{left:16px;background:var(--accent)}
+@media (prefers-reduced-motion:reduce){.tog::after{transition:none}}
+.presetinfo{padding:8px 12px;color:var(--muted);font-size:12px;border-bottom:1px solid var(--faint);min-height:34px}
+/* footer */
+footer{display:flex;align-items:center;gap:10px;padding:0 14px;border-top:1px solid var(--rule)}
+#time{font:500 13px var(--mono);min-width:120px}
+.meter{width:120px;height:10px;display:grid;grid-template-rows:1fr 1fr;gap:2px}
+.meter div{background:var(--faint);position:relative;overflow:hidden}
+.meter div span{position:absolute;inset:0 auto 0 0;background:var(--align)}
+.meter div span.hot{background:var(--err)}
+#status{font:12px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#status.busy{color:var(--accent)}
+/* log drawer */
+#logd{position:fixed;left:0;right:0;bottom:46px;height:38vh;background:#080808;border-top:1px solid var(--rule);display:none;flex-direction:column;z-index:5}
+#logd.show{display:flex}
+#logd .bar{display:flex;gap:8px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--rule)}
+#logbody{flex:1;overflow:auto;padding:6px 12px;font:11.5px/1.45 var(--mono);white-space:pre;color:#cfcfcf;user-select:text}
+#logbody .WRN{color:var(--warn)} #logbody .ERR{color:var(--err)} #logbody .DBG{color:#777}
+/* tooltip */
+#tip{position:fixed;z-index:9;max-width:300px;background:#111;border:1px solid var(--rule);padding:7px 9px;font-size:12px;color:var(--text);pointer-events:none;display:none;line-height:1.4}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">AUTO <b>MALIGN</b> STUDIO<small>KracKill$</small></div>
+    <div class="sep"></div>
+    <button id="bOpen" data-tip="Load a folder of WAV stems exported from your DAW (same start point). Auto Malign learns them: phrases, consonants, pitch, tempo, key, and which takes double which.">Open stems</button>
+    <button id="bSession" data-tip="Open a saved .amsession file (the stems are re-read from where they were).">Open session</button>
+    <button id="bSave" data-tip="Save the session: every setting, role and send, plus the stems' locations.">Save</button>
+    <button id="bExport" data-tip="Export each processed stem, every effect layer and native return, and the mix (24-bit WAV) to a folder.">Export</button>
+    <div class="sep"></div>
+    <button id="bUndo" data-tip="Undo (Ctrl+Z)">Undo</button>
+    <button id="bRedo" data-tip="Redo (Ctrl+Shift+Z)">Redo</button>
+    <div class="sep"></div>
+    <div class="seg" id="mode" data-tip="Mixing: align and fix tools (doubles, throws, space). Producer: sound design (freeze, shimmer, rolls, reverse reverb, call and response, Ghost notes). Both are always in the sound; the mode chooses what you see.">
+      <button data-m="0">Mixing</button><button data-m="1">Producer</button>
+    </div>
+    <select id="preset" data-tip="Presets for common uses. Aligned: fixes. Maligned: effects. A preset changes several settings at once and can be undone."></select>
+    <div class="grow"></div>
+    <div class="readout" id="tk" data-tip="Learned tempo and key (tempo can be set by hand under Session).">tempo <em>-</em> key <em>-</em></div>
+  </header>
+  <main>
+    <section class="col">
+      <div class="colhead"><span>Tracks</span><span class="grow"></span><span id="ntr" class="readout"></span></div>
+      <div id="trkspacer" data-tip="Waveforms are coloured by frequency, like KracKill$ Vision: red = lows (under 200 Hz), green = mids, blue = highs (above 2 kHz). The strip above the lanes shows the learned vocal gaps and entrances."><span><i style="background:#ff3b30"></i>low</span><span><i style="background:#2bd96b"></i>mid</span><span><i style="background:#3d7bff"></i>high</span></div>
+      <div class="scroll" id="tracks"></div>
+    </section>
+    <section class="col">
+      <div class="colhead"><span>Timeline</span><span class="grow"></span><span class="readout" data-tip="Click to move the playhead. Shift-drag to select a section, then re-learn just that section after you changed the stems.">click: seek &middot; shift-drag: select</span></div>
+      <div id="tl"><canvas id="cv"></canvas>
+        <div id="empty"><h2>Load your stems</h2><p>Export the tracks of a song from your DAW as WAV files from the same start point, put them in one folder, and open it. Vocals, doubles, the beat and printed returns are recognised; you can change any role.</p><button id="bOpen2">Open stems</button></div>
+      </div>
+      <div id="selbar"><span id="selt"></span><select id="selTrack"></select><button id="bRelearn" data-tip="Recompute what was learned in this section only (after you edited or replaced it), then rebuild the effects that depend on it.">Re-learn section</button><button id="bSelClear">Clear</button></div>
+    </section>
+    <section class="col">
+      <div class="colhead"><span id="ctitle">Mixing</span></div>
+      <div class="presetinfo" id="pinfo">Pick a preset or shape the sound below.</div>
+      <div class="scroll" id="controls"></div>
+    </section>
+  </main>
+  <footer>
+    <button id="bPlay" data-tip="Play / pause (Space)">Play</button>
+    <button id="bStop" data-tip="Stop and return to the start">Stop</button>
+    <button id="bLoop" data-tip="Loop the whole song">Loop</button>
+    <span id="time">0:00.0 / 0:00.0</span>
+    <div class="seg" id="mon" data-tip="A/B: what you hear. Processed is everything Auto Malign does; Original is the stems as loaded (O key toggles)."><button data-v="0" class="on">Processed</button><button data-v="1">Original</button></div>
+    <button id="bMono" data-tip="Mono check: hear both channels summed (M key). The doubles split and the inside-out effects are made to hold up here.">Mono</button>
+    <div class="meter" data-tip="Output level. Red means within 0.5 dB of full scale: lower Master."><div><span id="mL"></span></div><div><span id="mR"></span></div></div>
+    <span id="status" class="grow"></span>
+    <button id="bLog" data-tip="Debug log: everything the studio does, with timings. Also written to studio.log in the app data folder.">Log</button>
+  </footer>
+</div>
+<div id="logd">
+  <div class="bar"><b>Debug log</b><span class="grow"></span>
+    <select id="logLevel" data-tip="How much to log"><option value="0">Debug</option><option value="1" selected>Info</option><option value="2">Warnings</option><option value="3">Errors</option></select>
+    <button id="logCopy">Copy</button><button id="logClear">Clear</button><button id="logFolder" data-tip="Show the log file (studio.log) in its folder.">Show file</button><button id="logClose">Close</button></div>
+  <div id="logbody"></div>
+</div>
+<div id="tip"></div>
+<script>
+'use strict';
+// ----------------------------------------------------------------------------------------------- bridge
+const JUCE = window.__JUCE__;
+const send = (name, data = {}) => { if (JUCE) JUCE.backend.emitEvent('action', Object.assign({ name }, data)); else mock.action(name, data); };
+const $ = id => document.getElementById(id);
+let S = null;                 // last full session from the app
+let T = 0, LEN = 0;           // playhead, length (s)
+let overview = [];            // per-track peak envelopes
+const ROLES = ['Other', 'Lead', 'Double', 'Beat', 'Return'];
+const MIXING_GROUPS = ['doubles', 'throws', 'space', 'triggers', 'returns', 'master', 'session'];
+const PRODUCER_GROUPS = ['producer', 'freeze', 'shimmer', 'roll', 'roll mods', 'reverse reverb', 'response', 'ghost', 'triggers', 'returns', 'master', 'session'];
+const GROUP_TITLE = { doubles: 'Doubles', throws: 'Delay throws', space: 'Space', triggers: 'Triggers', returns: 'Native returns', master: 'Master', session: 'Session',
+  producer: 'Effects source', freeze: 'Freeze', shimmer: 'Shimmer', roll: 'Roll', 'roll mods': 'Roll modulation (start → end)', 'reverse reverb': 'Reverse reverb', response: 'Call and response', ghost: 'Ghost notes' };
+const GROUP_SWITCH = { doubles: 'doublesOn', throws: 'throwsOn', freeze: 'freezeOn', shimmer: 'shimmerOn', roll: 'rollOn', 'reverse reverb': 'rrOn', response: 'responseOn', ghost: 'ghostOn' };
+const TIPS = {
+  doublesOn: 'Doubles: each double is lined up with its lead (flam fix) and split into what it shares with the lead (locked to it, in the centre) and what differs (kept at its pan, or in the side only). Mono no longer combs.',
+  flamAmount: 'How far consonants are pulled onto the lead. Whole syllables move; nothing is stretched. 100% = tight; lower keeps some of the performance\'s looseness.',
+  agreement: 'How much of what the takes do differently stays in: low = one solid voice, high = loose and human.',
+  diffSideOnly: 'Put the takes\' differences in the stereo side only: big and wide in stereo, one clean voice in mono.',
+  diffWidth: 'Level of the side-only differences.',
+  throwsOn: 'Delay throws: the last word of each line echoes into the gap after it, and fades out (darkening) just before the voice returns.',
+  throwFalloff: 'Gate: the echoes are gone when the voice returns. Duck: they carry on, lowered.', throwFadeS: 'How long before the entrance the echoes start to fade (S-curve).', throwDarken: 'Close a low-pass while the echoes fade, so the tail tucks under the entrance.',
+  gapReverbOn: 'Gap bloom: the reverb stays down while the voice sings and opens up between lines.', gapDuck: 'How far the reverb goes down while singing.',
+  pocketOn: 'Phase pocket: while the voice sings, the beat\'s centre moves to the sides only at the frequencies the voice is using. Stereo energy is kept; the centre opens for the voice.',
+  pocketAmount: 'How much of the beat\'s centre moves out of the voice\'s way.', pocketAttackMs: 'How fast the pocket opens when the voice comes in.', pocketReleaseMs: 'How slowly it closes after.',
+  fxSource: 'What the Producer effects listen to: all vocals together, or one track.', fxSendRevDb: 'How much of the Producer effects goes into the native reverb.',
+  freezeOn: 'Freeze: the voice\'s sound is held as a pad. Only in the gaps, or as a held ghost under the whole voice.',
+  shimmerOn: 'Shimmer: the voice pitched (octave up by default), with its own formant, tilt and breath. Inside-out puts it only in the stereo side (gone in mono).',
+  shimFormant: 'Formant shift in semitones: 0 keeps the singer\'s natural throat; negative = bigger and darker; the old shimmer moved it with the pitch.', shimBreath: 'Replace part of the tone with breath under the same vocal shape.', shimTilt: 'Brighter (+) or darker (-).',
+  rollOn: 'Roll: stutter repeats in the gaps. Pre: the start of the next line repeats into it. Post: the end of the line repeats after it. Both: each half.',
+  rollStartMs: 'Start length in ms (0 = use the tempo division).', rollEndMs: 'End length in ms (0 = use the tempo division).',
+  modPitch: 'Pitch moves from start to end across the roll (a riser, or a tape fall).', modFilter: 'Low-pass opens (or closes) across the roll.', modDrive: 'Saturation builds across the roll.',
+  modLevel: 'Level swell across the roll.', modGate: 'Repeats get choppier (shorter duty).', modCrush: 'Bit and sample-rate crush builds across the roll.', modStereo: 'Repeats spread out to ping-pong / inside-out.', modReverse: 'Every other repeat reversed.',
+  rrOn: 'Reverse reverb: the first moment of each line, reverbed and reversed, swelling into the exact sample the voice comes in.', rrLandMs: 'Land the swell this much before the voice (negative = earlier) so the impact and the voice hit together.',
+  responseOn: 'Call and response: the last word answers itself in the next gap from the other side of the stereo field.', responseBleed: '0 = tight to the gap; turn up to let the answer carry on under the voice.', responseDuckDb: 'How far the answer tucks under the voice while it bleeds over it.',
+  ghostOn: 'Ghost notes: resonators tuned to the voice\'s notes (or the key chord), played by the voice itself, mono-safe.', ghostRegister: 'Interval from the voice: +12 = octave above (clear over a beat), -12 = octave below.', ghostFromKey: 'Hold the song\'s key chord instead of following the voice\'s notes (good for rap and spoken parts).', ghostLevelDb: 'Notes level (with headroom: rhythmic vocals over a loud beat need it).',
+  trigSensitivity: 'What counts as a gap: quieter than this many dB below the voice\'s peak. Lower = only true silence.', trigMinGapS: 'Gaps shorter than this are ignored.', trigMinPhraseS: 'Only react after lines at least this long.',
+  trigMinEntranceDb: 'Only react when the voice comes back at least this many dB louder than the gap.', trigSustainedOnly: 'Only react after lines that end on a held, sung note.', trigEveryN: 'React to every Nth gap.',
+  trigProbability: 'Chance per gap (repeatable).', trigDynamics: 'Effects follow how loud the word or entrance they react to is: a whispered line gets a whispered echo.',
+  masterDb: 'Master level of the processed mix (and of the original, so A/B stays fair).', bpm: 'Tempo for every tempo division (0 = the learned tempo).',
+};
+// ----------------------------------------------------------------------------------------------- tooltips
+const tip = $('tip'); let tipT = 0;
+document.addEventListener('mouseover', e => { const el = e.target.closest('[data-tip]'); clearTimeout(tipT); if (!el) { tip.style.display = 'none'; return; }
+  tipT = setTimeout(() => { tip.textContent = el.dataset.tip; tip.style.display = 'block'; const r = el.getBoundingClientRect();
+    let x = Math.min(innerWidth - tip.offsetWidth - 8, Math.max(8, r.left)), y = r.bottom + 6; if (y + tip.offsetHeight > innerHeight - 8) y = r.top - tip.offsetHeight - 6; tip.style.left = x + 'px'; tip.style.top = y + 'px'; }, 450); });
+document.addEventListener('mousedown', () => { tip.style.display = 'none'; });
+// ----------------------------------------------------------------------------------------------- formatting
+const fmtT = s => { s = Math.max(0, s); const m = Math.floor(s / 60); return m + ':' + (s - m * 60).toFixed(1).padStart(4, '0'); };
+function fmt(p, v) {
+  if (p.choices && p.choices.length) return p.choices[Math.round(v)] ?? v;
+  if (p.switch) return v > 0.5 ? 'On' : 'Off';
+  const id = p.id;
+  if (/Db$/.test(id) || id === 'gapDuck' && false) return (v > 0 ? '+' : '') + v.toFixed(1) + ' dB';
+  if (/Ms$/.test(id)) return id.startsWith('roll') && v === 0 ? 'tempo' : Math.round(v) + ' ms';
+  if (/S$/.test(id) && !/Semis$/.test(id)) return v.toFixed(2) + ' s';
+  if (/Hz$|Cut$|FilterA$|FilterB$/.test(id)) return v >= 1000 ? (v / 1000).toFixed(1) + ' k' : Math.round(v) + ' Hz';
+  if (/Semis$|Formant$|PitchA$|PitchB$|Register$/.test(id)) return (v > 0 ? '+' : '') + Math.round(v) + ' st';
+  if (id === 'bpm') return v === 0 ? 'learned' : v.toFixed(1);
+  if (id === 'trigEveryN') return Math.round(v) === 1 ? 'every' : 'every ' + Math.round(v);
+  if (id === 'fxSource') return v < 0 ? 'all vocals' : (S && S.state.tracks[Math.round(v)] ? S.state.tracks[Math.round(v)].name : '#' + Math.round(v));
+  if (p.max <= 3 && p.min >= -1) return Math.round(v * 100) + '%';
+  return (Math.round(v * 10) / 10).toString();
+}
+// ----------------------------------------------------------------------------------------------- tracks panel
+function buildTracks() {
+  const box = $('tracks'); box.innerHTML = ''; if (!S) return;
+  const tr = S.state.tracks; $('ntr').textContent = tr.length + ' tracks';
+  tr.forEach((t, i) => {
+    const d = document.createElement('div'); d.className = 'trk'; d.dataset.role = t.role;
+    const refOpts = tr.map((o, j) => j === i ? '' : `<option value="${j}" ${t.ref === j ? 'selected' : ''}>${esc(o.name)}</option>`).join('');
+    d.innerHTML = `<div class="nm" data-tip="${esc(t.name)}"><i></i>${esc(t.name)}</div>
+      <div class="btns"><button class="m ${t.mute ? 'on' : ''}" data-tip="Mute">M</button><button class="s ${t.solo ? 'on' : ''}" data-tip="Solo">S</button></div>
+      <div class="row2"><select class="role" data-tip="Role: Lead (a voice other takes follow), Double (follows its lead: flam fix + split), Beat (gets the phase pocket), Return (a printed effect return), Other.">${ROLES.map((r, k) => `<option value="${k}" ${t.role === k ? 'selected' : ''}>${r}</option>`).join('')}</select>
+      ${t.role === 2 ? `<select class="ref" data-tip="The lead this double follows.">${refOpts}</select>` : ''}</div>
+      <div class="row2"><span class="mini" data-tip="Gain (dB). Ctrl+click resets.">gain<input type="range" class="gain" min="-24" max="12" step="0.1" value="${t.gainDb}"></span>
+      <span class="mini" data-tip="Pan. Ctrl+click resets.">pan<input type="range" class="pan" min="-1" max="1" step="0.01" value="${t.pan}"></span>
+      <span class="mini" data-tip="Send to the native reverb (dB; far left = off). Ctrl+click turns it off.">rev<input type="range" class="srev" min="-60" max="6" step="0.5" value="${Math.max(-60, t.sendRevDb)}"></span>
+      <span class="mini" data-tip="Send to the native delay (dB; far left = off). Ctrl+click turns it off.">dly<input type="range" class="sdly" min="-60" max="6" step="0.5" value="${Math.max(-60, t.sendDlyDb)}"></span></div>`;
+    const set = (field, v) => send('track', { i, field, v });
+    d.querySelector('.m').onclick = () => set('mute', t.mute ? 0 : 1);
+    d.querySelector('.s').onclick = () => set('solo', t.solo ? 0 : 1);
+    d.querySelector('.role').onchange = e => { const r = +e.target.value; set('role', r); if (r === 2 && t.ref < 0) { const lead = tr.findIndex(o => o.role === 1); if (lead >= 0) set('ref', lead); } };
+    const rf = d.querySelector('.ref'); if (rf) rf.onchange = e => set('ref', +e.target.value);
+    const slider = (cls, field, def, toVal = v => v) => { const el = d.querySelector('.' + cls);
+      el.oninput = () => set(field, toVal(+el.value)); el.onchange = () => send('endDrag');
+      el.addEventListener('pointerdown', e => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); el.value = def; set(field, toVal(def)); } }); };
+    slider('gain', 'gainDb', 0); slider('pan', 'pan', 0); slider('srev', 'sendRevDb', -60, v => v <= -59.9 ? -120 : v); slider('sdly', 'sendDlyDb', -60, v => v <= -59.9 ? -120 : v);
+    box.appendChild(d);
+  });
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// ----------------------------------------------------------------------------------------------- controls panel
+const closed = JSON.parse(localStorageGet('am.closed') || '{}');
+function localStorageGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { } }
+function buildControls() {
+  const box = $('controls'); box.innerHTML = ''; if (!S) return;
+  const P = S.state.params, defs = S.paramDefs, mode = Math.round(P.mode || 0);
+  document.body.classList.toggle('producer', mode === 1); $('ctitle').textContent = mode ? 'Producer' : 'Mixing';
+  [...$('mode').children].forEach(b => b.classList.toggle('on', +b.dataset.m === mode));
+  const groups = mode ? PRODUCER_GROUPS : MIXING_GROUPS;
+  for (const g of groups) {
+    const ps = defs.filter(p => p.group === g && p.id !== 'mode' && p.id !== GROUP_SWITCH[g]); if (!ps.length && !GROUP_SWITCH[g]) continue;
+    const el = document.createElement('div'); el.className = 'grp' + (closed[g] ? ' closed' : '');
+    const sw = GROUP_SWITCH[g]; const on = sw ? P[sw] > 0.5 : null;
+    el.innerHTML = `<div class="gh"><span class="t">${GROUP_TITLE[g] || g}</span>${sw ? `<button class="tog ${on ? 'on' : ''}" data-tip="${esc(TIPS[sw] || 'On / off')}"></button>` : ''}<span class="chev">${closed[g] ? '+' : '−'}</span></div><div class="gb"></div>`;
+    const gh = el.querySelector('.gh'), gb = el.querySelector('.gb');
+    gh.onclick = e => { if (e.target.classList.contains('tog')) return; closed[g] = !closed[g]; localStorageSet('am.closed', JSON.stringify(closed)); el.classList.toggle('closed'); gh.querySelector('.chev').textContent = closed[g] ? '+' : '−'; };
+    if (sw) gh.querySelector('.tog').onclick = () => send('param', { id: sw, v: on ? 0 : 1 });
+    const used = new Set();
+    for (const p of ps) {
+      if (used.has(p.id)) continue;
+      // start -> end pairs (roll modulation): one row with an on switch and two sliders
+      const m = p.id.match(/^(mod[A-Z][a-z]+)$/);
+      if (m && defs.find(q => q.id === p.id + 'A')) {
+        const a = defs.find(q => q.id === p.id + 'A'), b = defs.find(q => q.id === p.id + 'B'); used.add(a.id); used.add(b.id);
+        const row = document.createElement('div'); row.className = 'ctl pair';
+        row.innerHTML = `<label data-tip="${esc(TIPS[p.id] || p.label)}"><button class="tog ${P[p.id] > 0.5 ? 'on' : ''}" style="margin-right:6px;vertical-align:middle"></button>${esc(p.label)}</label>
+          <input type="range" min="${a.min}" max="${a.max}" step="${stepOf(a)}" value="${P[a.id]}" data-tip="Start: ${esc(a.label)}">
+          <input type="range" min="${b.min}" max="${b.max}" step="${stepOf(b)}" value="${P[b.id]}" data-tip="End: ${esc(b.label)}">
+          <span class="v">${short(a, P[a.id])}→${short(b, P[b.id])}</span>`;
+        row.querySelector('.tog').onclick = () => send('param', { id: p.id, v: P[p.id] > 0.5 ? 0 : 1 });
+        const [ra, rb] = row.querySelectorAll('input'); const pv = row.querySelector('.v'); const upd = () => pv.textContent = short(a, +ra.value) + '→' + short(b, +rb.value);
+        bindRange(ra, a); bindRange(rb, b); ra.addEventListener('input', upd); rb.addEventListener('input', upd);
+        gb.appendChild(row); continue;
+      }
+      if (/^mod[A-Z][a-z]+[AB]$/.test(p.id)) continue;
+      gb.appendChild(controlRow(p, P[p.id]));
+    }
+    box.appendChild(el);
+  }
+}
+function short(p, v) { const f = fmt(p, v); return f.replace(/ (st|dB|Hz|ms|s)$/, '').replace(' k', 'k'); }
+function stepOf(p) { if (p.choices && p.choices.length) return 1; const r = p.max - p.min; if (/EveryN|Register|Semis|Formant|PitchA|PitchB|fxSource/.test(p.id)) return 1; return r > 100 ? 1 : r > 10 ? 0.1 : 0.01; }
+function controlRow(p, v) {
+  const row = document.createElement('div'); row.className = 'ctl';
+  const tipTxt = esc(TIPS[p.id] || p.label);
+  if (p.switch) {
+    row.innerHTML = `<label data-tip="${tipTxt}">${esc(p.label)}</label><span></span><button class="tog ${v > 0.5 ? 'on' : ''}" data-tip="${tipTxt}" style="justify-self:end"></button>`;
+    row.querySelector('.tog').onclick = () => send('param', { id: p.id, v: v > 0.5 ? 0 : 1 });
+  } else if ((p.choices && p.choices.length) || p.id === 'fxSource') {
+    const opts = p.id === 'fxSource' ? [[-1, 'All vocals'], ...S.state.tracks.map((t, i) => [i, t.name])] : p.choices.map((c, i) => [i, c]);
+    row.innerHTML = `<label data-tip="${tipTxt}">${esc(p.label)}</label><select style="grid-column:2/4">${opts.map(([k, c]) => `<option value="${k}" ${Math.round(v) === k ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`;
+    row.querySelector('select').onchange = e => { send('param', { id: p.id, v: +e.target.value }); send('endDrag'); };
+  } else {
+    row.innerHTML = `<label data-tip="${tipTxt}">${esc(p.label)}</label><input type="range" min="${p.min}" max="${p.max}" step="${stepOf(p)}" value="${v}" data-tip="${tipTxt} (Ctrl+click resets.)"><span class="v">${fmt(p, v)}</span>`;
+    bindRange(row.querySelector('input'), p, row.querySelector('.v'));
+  }
+  return row;
+}
+function bindRange(el, p, out) {
+  el.addEventListener('input', () => { if (out) out.textContent = fmt(p, +el.value); send('param', { id: p.id, v: +el.value }); });
+  el.addEventListener('change', () => send('endDrag'));
+  el.addEventListener('pointerdown', e => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); el.value = p.def; if (out) out.textContent = fmt(p, p.def); send('param', { id: p.id, v: p.def }); send('endDrag'); } });
+  el.addEventListener('dblclick', () => { el.value = p.def; if (out) out.textContent = fmt(p, p.def); send('param', { id: p.id, v: p.def }); send('endDrag'); });
+}
+function buildPresets() {
+  const sel = $('preset'); if (!S) { sel.innerHTML = '<option>Presets</option>'; return; }
+  const mode = Math.round(S.state.params.mode || 0) ? 'Producer' : 'Mixing';
+  const fam = { Aligned: [], Maligned: [] }; S.presets.forEach(p => (fam[p.family] = fam[p.family] || []).push(p));
+  sel.innerHTML = '<option value="">Presets</option>' + Object.entries(fam).map(([f, list]) => `<optgroup label="${f}">${list.map(p => `<option value="${esc(p.name)}">${esc(p.name)}${p.mode !== mode ? ' (' + p.mode + ')' : ''}</option>`).join('')}</optgroup>`).join('');
+  sel.onchange = () => { const p = S.presets.find(x => x.name === sel.value); if (!p) return; send('preset', { preset: p.name }); $('pinfo').textContent = p.info; sel.value = ''; };
+}
+// ----------------------------------------------------------------------------------------------- timeline
+// Arrangement-style lanes: each lane lines up with its track row (they scroll together), a bar/beat ruler from the
+// learned tempo, the learned vocal gaps (hatched) with entrance markers, frequency-coloured waveforms.
+const cv = $('cv'), ctx = cv.getContext('2d'); let sel = null, dragFrom = null;
+const RULER = 22, GAPS = 22, HEAD = RULER + GAPS;
+let hatch = null;
+function hatchPattern() { if (hatch) return hatch; const c = document.createElement('canvas'); c.width = c.height = 8; const g = c.getContext('2d'); g.strokeStyle = 'rgba(242,242,242,.22)'; g.lineWidth = 1.5;
+  g.beginPath(); g.moveTo(-2, 10); g.lineTo(10, -2); g.moveTo(-2, 2); g.lineTo(2, -2); g.moveTo(6, 10); g.lineTo(10, 6); g.stroke(); return hatch = ctx.createPattern(c, 'repeat'); }
+function colOf(lo, mid, hi, dim) {   // Serato-style: the band mix sets the hue, normalised so the strongest band is full
+  const m = Math.max(lo, mid, hi, 1e-6); let r = lo / m, g = mid / m, b = hi / m; r = Math.pow(r, 0.8); g = Math.pow(g, 0.8); b = Math.pow(b, 0.8);
+  const k = dim ? 0.28 : 1; return `rgb(${Math.round((40 + 215 * r) * k)},${Math.round((40 + 200 * g) * k)},${Math.round((50 + 205 * b) * k)})`; }
+function drawTL() {
+  const r = $('tl').getBoundingClientRect(), dpr = devicePixelRatio || 1; cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); const W = r.width, H = r.height; ctx.fillStyle = '#050505'; ctx.fillRect(0, 0, W, H);
+  $('empty').style.display = S && LEN > 0 ? 'none' : 'flex'; if (!S || !LEN) return;
+  const css = getComputedStyle(document.body), accent = css.getPropertyValue('--accent').trim(), align = css.getPropertyValue('--align').trim();
+  const tr = S.state.tracks, x = t => t / LEN * W, rows = [...document.querySelectorAll('#tracks .trk')], tlTop = r.top;
+  const bpm = S.bpm || 120, bar = 240 / bpm, beat = 60 / bpm;
+  // lanes
+  ctx.save(); ctx.beginPath(); ctx.rect(0, HEAD, W, H - HEAD); ctx.clip();
+  tr.forEach((t, i) => {
+    const row = rows[i]; if (!row) return; const rr = row.getBoundingClientRect(), y = rr.top - tlTop, h = rr.height; if (y > H || y + h < HEAD) return;
+    ctx.fillStyle = i % 2 ? '#0a0a0a' : '#070707'; ctx.fillRect(0, y, W, h);
+    for (let b = 0; b * bar < LEN; b++) { ctx.fillStyle = b % 4 ? '#111' : '#181818'; ctx.fillRect(Math.round(x(b * bar)), y, 1, h); }
+    const env = overview[i] || [], n = env.length, mid = y + 14 + (h - 18) / 2, half = (h - 22) / 2, dim = t.mute || tr.some(o => o.solo) && !t.solo;
+    for (let k = 0; k < n; k++) { const p = env[k]; const pk = Array.isArray(p) ? p[0] : p; if (pk < 0.004) continue;
+      const hh = Math.max(0.5, Math.min(1, Math.pow(pk, 0.7)) * half); ctx.fillStyle = Array.isArray(p) ? colOf(p[1], p[2], p[3], dim) : (dim ? '#333' : '#8a8a8a');
+      ctx.fillRect(k / n * W, mid - hh, Math.max(1, W / n + 0.3), hh * 2); }
+    // name tab (clip header): role colour, hard edges
+    const roleCol = t.role === 1 ? accent : t.role === 2 ? align : t.role === 3 ? '#f2f2f2' : t.role === 4 ? '#5c5c5c' : '#9a9a9a';
+    ctx.font = '500 10.5px "IBM Plex Mono", monospace'; const label = (t.role === 2 && tr[t.ref] ? t.name + '  ← ' + tr[t.ref].name : t.name).slice(0, 64), tw = ctx.measureText(label).width + 12;
+    ctx.fillStyle = dim ? '#2a2a2a' : roleCol; ctx.fillRect(0, y, tw, 14); ctx.fillStyle = '#050505'; ctx.fillText(label, 6, y + 10.5);
+    ctx.fillStyle = dim ? '#2a2a2a' : roleCol; ctx.fillRect(0, y + 14, W, 1);
+    ctx.fillStyle = '#262626'; ctx.fillRect(0, y + h - 1, W, 1);
+  });
+  ctx.restore();
+  // ruler
+  ctx.fillStyle = '#0b0b0b'; ctx.fillRect(0, 0, W, RULER); ctx.fillStyle = '#262626'; ctx.fillRect(0, RULER - 1, W, 1);
+  ctx.font = '10px "IBM Plex Mono", monospace';
+  const pxBar = x(bar), every = pxBar < 26 ? Math.ceil(26 / pxBar) : 1;
+  for (let b = 0; b * bar < LEN; b++) { const xb = Math.round(x(b * bar)); ctx.fillStyle = '#5c5c5c'; ctx.fillRect(xb, b % every ? 14 : 6, 1, b % every ? 8 : 16);
+    if (b % every === 0) { ctx.fillStyle = '#9a9a9a'; ctx.fillText(String(b + 1), xb + 3, 13); }
+    if (pxBar > 40) for (let q = 1; q < 4; q++) { ctx.fillStyle = '#333'; ctx.fillRect(Math.round(x(b * bar + q * beat)), 16, 1, 6); } }
+  // learned gaps lane
+  ctx.fillStyle = '#080808'; ctx.fillRect(0, RULER, W, GAPS); ctx.fillStyle = '#262626'; ctx.fillRect(0, HEAD - 1, W, 1);
+  for (const [a, b] of S.gaps || []) { ctx.fillStyle = hatchPattern(); ctx.fillRect(x(a), RULER + 3, Math.max(1, x(b) - x(a)), GAPS - 6); if (b < LEN - 0.01) { ctx.fillStyle = accent; ctx.fillRect(Math.round(x(b)) - 1, RULER + 2, 3, GAPS - 4); } }
+  ctx.fillStyle = '#5c5c5c'; ctx.fillText('gaps', W - 34, RULER + 15);
+  // selection + playhead
+  if (sel) { ctx.fillStyle = 'rgba(255,255,255,.07)'; ctx.fillRect(x(sel[0]), RULER, x(sel[1]) - x(sel[0]), H - RULER); ctx.fillStyle = accent; ctx.fillRect(Math.round(x(sel[0])), RULER, 1, H - RULER); ctx.fillRect(Math.round(x(sel[1])), RULER, 1, H - RULER); }
+  const px = Math.round(x(T)); ctx.fillStyle = '#f2f2f2'; ctx.fillRect(px, 0, 1, H); ctx.beginPath(); ctx.moveTo(px - 5, 0); ctx.lineTo(px + 6, 0); ctx.lineTo(px + 0.5, 7); ctx.fill();
+}
+$('tracks').addEventListener('scroll', () => drawTL());
+cv.addEventListener('wheel', e => { $('tracks').scrollTop += e.deltaY; e.preventDefault(); }, { passive: false });
+const tAt = e => { const r = cv.getBoundingClientRect(); return Math.max(0, Math.min(LEN, (e.clientX - r.left) / r.width * LEN)); };
+cv.addEventListener('pointerdown', e => { if (!LEN) return; if (e.shiftKey) { dragFrom = tAt(e); sel = [dragFrom, dragFrom]; cv.setPointerCapture(e.pointerId); } else { T = tAt(e); send('seek', { t: T }); } drawTL(); });
+cv.addEventListener('pointermove', e => { if (dragFrom == null) return; const t = tAt(e); sel = [Math.min(dragFrom, t), Math.max(dragFrom, t)]; drawTL(); showSel(); });
+cv.addEventListener('pointerup', () => { dragFrom = null; if (sel && sel[1] - sel[0] < 0.05) sel = null; showSel(); drawTL(); });
+function showSel() { $('selbar').classList.toggle('show', !!sel); if (!sel) return; $('selt').textContent = `${fmtT(sel[0])} – ${fmtT(sel[1])}`;
+  $('selTrack').innerHTML = '<option value="-1">all tracks</option>' + (S ? S.state.tracks.map((t, i) => `<option value="${i}">${esc(t.name)}</option>`).join('') : ''); }
+$('bRelearn').onclick = () => { if (sel) send('relearn', { a: sel[0], b: sel[1], track: +$('selTrack').value }); };
+$('bSelClear').onclick = () => { sel = null; showSel(); drawTL(); };
+new ResizeObserver(drawTL).observe($('tl'));
+// ----------------------------------------------------------------------------------------------- header / footer
+$('bOpen').onclick = $('bOpen2').onclick = () => send('openFolder'); $('bSession').onclick = () => send('openSession'); $('bSave').onclick = () => send('save'); $('bExport').onclick = () => send('export');
+$('bUndo').onclick = () => send('undo'); $('bRedo').onclick = () => send('redo');
+[...$('mode').children].forEach(b => b.onclick = () => send('param', { id: 'mode', v: +b.dataset.m }));
+$('bPlay').onclick = () => send('play'); $('bStop').onclick = () => { send('stop'); T = 0; drawTL(); };
+let loopOn = false; $('bLoop').onclick = () => { loopOn = !loopOn; $('bLoop').classList.toggle('on', loopOn); send('loop', { on: loopOn ? 1 : 0 }); };
+let monoOn = false; const setMono = v => { monoOn = v; $('bMono').classList.toggle('on', v); send('mono', { on: v ? 1 : 0 }); }; $('bMono').onclick = () => setMono(!monoOn);
+let monV = 0; const setMon = v => { monV = v; [...$('mon').children].forEach(b => b.classList.toggle('on', +b.dataset.v === v)); send('monitor', { v }); };
+[...$('mon').children].forEach(b => b.onclick = () => setMon(+b.dataset.v));
+$('bLog').onclick = () => $('logd').classList.toggle('show'); $('logClose').onclick = () => $('logd').classList.remove('show');
+$('logCopy').onclick = () => send('copyLog'); $('logClear').onclick = () => { send('clearLog'); $('logbody').innerHTML = ''; }; $('logFolder').onclick = () => send('openLogFolder');
+$('logLevel').onchange = e => send('logLevel', { v: +e.target.value });
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' && e.target.type !== 'range' || e.target.tagName === 'SELECT') return;
+  const k = e.key.toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); send(e.shiftKey ? 'redo' : 'undo'); }
+  else if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); send('redo'); }
+  else if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); send('save'); }
+  else if (k === ' ') { e.preventDefault(); send('play'); }
+  else if (k === 'm' && !e.ctrlKey) setMono(!monoOn);
+  else if (k === 'o' && !e.ctrlKey) setMon(monV ? 0 : 1);
+});
+// ----------------------------------------------------------------------------------------------- updates from the app
+function applySession(s) {
+  const prevMode = S ? S.state.params.mode : null, prevTracks = S ? JSON.stringify(S.state.tracks) : null;
+  // the app sends the full state as a JSON string inside; params come as an object
+  S = s; LEN = s.length || 0;
+  $('tk').innerHTML = `tempo <em>${(s.bpm || 0).toFixed(1)}</em> key <em>${esc(s.key || '-')}</em>`;
+  $('bUndo').disabled = !s.canUndo; $('bRedo').disabled = !s.canRedo;
+  $('bUndo').dataset.tip = s.canUndo ? 'Undo ' + s.undoLabel + ' (Ctrl+Z)' : 'Nothing to undo'; $('bRedo').dataset.tip = s.canRedo ? 'Redo ' + s.redoLabel + ' (Ctrl+Shift+Z)' : 'Nothing to redo';
+  const ae = document.activeElement, dragging = ae && ae.tagName === 'INPUT' && ae.type === 'range';
+  if (!dragging) { buildControls(); if (prevTracks !== JSON.stringify(s.state.tracks)) buildTracks(); }
+  if (prevMode !== s.state.params.mode) buildPresets();
+  drawTL();
+}
+let lastLog = [];
+function onUpdate(m) {
+  if (typeof m === 'string') m = JSON.parse(m);
+  if (m.session) applySession(m.session);
+  if (m.overview) { overview = m.overview; drawTL(); }
+  T = m.t || 0; $('time').textContent = `${fmtT(T)} / ${fmtT(LEN)}`; $('bPlay').textContent = m.playing ? 'Pause' : 'Play'; $('bPlay').classList.toggle('on', !!m.playing);
+  const st = $('status'); st.classList.toggle('busy', !!m.busy); st.textContent = m.busy ? (m.job ? m.job + '…' : 'updating…') : (S && LEN ? 'ready' : '');
+  const pk = v => Math.max(0, Math.min(100, (20 * Math.log10(Math.max(v, 1e-6)) + 60) / 60 * 100));
+  for (const [id, v] of [['mL', m.peakL || 0], ['mR', m.peakR || 0]]) { const el = $(id); el.style.width = pk(v) + '%'; el.classList.toggle('hot', v > 0.944); }
+  if (m.log && m.log.length) { const lb = $('logbody'), stick = lb.scrollTop + lb.clientHeight >= lb.scrollHeight - 4;
+    for (const l of m.log) { const d = document.createElement('div'); const lv = (l.match(/ (DBG|INF|WRN|ERR) /) || [])[1] || 'INF'; d.className = lv; d.textContent = l; lb.appendChild(d); if (lv === 'ERR') $('logd').classList.add('show'); }
+    while (lb.childElementCount > 3000) lb.firstChild.remove(); if (stick) lb.scrollTop = lb.scrollHeight; }
+  drawPlayhead();
+}
+let phRaf = 0; function drawPlayhead() { if (phRaf) return; phRaf = requestAnimationFrame(() => { phRaf = 0; drawTL(); }); }
+// the app sends toJson(state) with params as an object: normalise to { params, tracks }
+function normalise(sess) { if (sess && sess.state && sess.state.params) return sess; return sess; }
+if (JUCE) { JUCE.backend.addEventListener('studio', m => onUpdate(typeof m === 'string' ? JSON.parse(m) : m)); send('ready'); }
+// ----------------------------------------------------------------------------------------------- mock (open this file in a browser to work on the interface)
+var mock = null;
+if (!JUCE) {
+  const defs = MOCK_DEFS();
+  const params = Object.fromEntries(defs.map(p => [p.id, p.def]));
+  const names = ['instrumental', 'lead solve imma problem center', 'dub solve these problems R', 'mean hi', 'mean pan 6L', 'mean pan 5R', 'hi 2L', 'hi R', 'A-Hybrid Reverb'];
+  const roles = [3, 1, 2, 1, 2, 2, 1, 2, 4], refs = [-1, -1, 1, -1, 3, 3, -1, 6, -1];
+  const tracks = names.map((n, i) => ({ name: n, path: '/stems/' + n + '.wav', gainDb: 0, pan: 0, mute: false, solo: false, role: roles[i], ref: refs[i], sendRevDb: -120, sendDlyDb: -120 }));
+  const hist = []; let red = [], playing = false; const logs = []; let tt = 0;
+  const sess = () => ({ length: 21.05, sr: 44100, bpm: 75.9, key: 'G major', file: '', canUndo: hist.length > 0, canRedo: red.length > 0, undoLabel: hist.length ? hist[hist.length - 1].l : '', redoLabel: red.length ? red[red.length - 1].l : '',
+    state: { params: { ...params }, tracks: JSON.parse(JSON.stringify(tracks)) }, paramDefs: defs, presets: MOCK_PRESETS(), gaps: [[0, 2.37], [6.14, 6.5], [7.77, 7.94], [8.0, 8.17], [10.35, 10.86], [18.76, 21.05]] });
+  const env = () => names.map((_, i) => Array.from({ length: 800 }, (_, k) => {
+    if (i === 0) { const ph = (k % 25) / 25, kick = Math.exp(-ph * 9), hat = (k % 6 === 0) ? 0.5 : 0.1; return [0.3 + 0.6 * kick, kick, 0.25, hat]; }
+    const on = k / 800 * 21 > 2.4 && Math.sin(k / 18 + i) > -0.6, sib = Math.random() < 0.08;
+    return on ? [0.3 + 0.45 * Math.random(), 0.12, 0.8, sib ? 0.9 : 0.18] : [0.01, 0, 0, 0]; }));
+  const snap = l => { hist.push({ l, p: { ...params }, t: JSON.parse(JSON.stringify(tracks)) }); red = []; };
+  mock = { action(name, d) {
+    const L = msg => logs.push(`${(performance.now() / 1000).toFixed(3).padStart(9)} INF ${msg}`);
+    if (name === 'param') { const def = defs.find(p => p.id === d.id); snap(def ? def.label : d.id); params[d.id] = d.v; L(`set ${d.id} = ${d.v}`); push(true); }
+    else if (name === 'track') { snap(tracks[d.i].name + ': ' + d.field); const t = tracks[d.i]; if (d.field === 'mute' || d.field === 'solo') t[d.field] = !!d.v; else t[d.field] = d.v; push(true); }
+    else if (name === 'preset') { snap('Preset: ' + d.preset); const p = MOCK_PRESETS().find(x => x.name === d.preset); (p.values || []).forEach(([k, v]) => params[k] = v); L('preset ' + d.preset); push(true); }
+    else if (name === 'undo' && hist.length) { const h = hist.pop(); red.push({ l: h.l, p: { ...params }, t: JSON.parse(JSON.stringify(tracks)) }); Object.assign(params, h.p); tracks.splice(0, tracks.length, ...h.t); L('undo: ' + h.l); push(true); }
+    else if (name === 'redo' && red.length) { const h = red.pop(); hist.push({ l: h.l, p: { ...params }, t: JSON.parse(JSON.stringify(tracks)) }); Object.assign(params, h.p); tracks.splice(0, tracks.length, ...h.t); L('redo: ' + h.l); push(true); }
+    else if (name === 'play') playing = !playing; else if (name === 'stop') { playing = false; tt = 0; } else if (name === 'seek') tt = d.t;
+    else if (name === 'relearn') L(`re-learned ${d.a.toFixed(2)}-${d.b.toFixed(2)} s`);
+    else L(name);
+  } };
+  function push(full) { onUpdate({ t: tt, playing, busy: false, job: '', peakL: playing ? 0.4 + 0.3 * Math.random() : 0, peakR: playing ? 0.4 + 0.3 * Math.random() : 0, log: logs.splice(0), session: full ? sess() : undefined }); }
+  onUpdate({ t: 0, playing: false, session: sess(), overview: env(), log: ['    0.000 INF mock session (open in the app to use real audio)'] });
+  setInterval(() => { if (playing) tt = (tt + 1 / 15) % 21.05; push(false); }, 1000 / 15);
+}
+function MOCK_DEFS() { return [{"id":"mode","label":"Mode","group":"session","min":0,"max":1,"def":0,"switch":false,"choices":["Mixing","Producer"]},{"id":"bpm","label":"Tempo","group":"session","min":0,"max":300,"def":0,"switch":false,"choices":[]},{"id":"doublesOn","label":"Doubles","group":"doubles","min":0,"max":1,"def":1,"switch":true,"choices":[]},{"id":"flamAmount","label":"Flam fix","group":"doubles","min":0,"max":1,"def":1,"switch":false,"choices":[]},{"id":"agreement","label":"Differences","group":"doubles","min":0,"max":2,"def":1,"switch":false,"choices":[]},{"id":"diffSideOnly","label":"Sides only","group":"doubles","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"diffWidth","label":"Side width","group":"doubles","min":0,"max":3,"def":1.6,"switch":false,"choices":[]},{"id":"throwsOn","label":"Delay throws","group":"throws","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"throwDiv","label":"Throw time","group":"throws","min":0,"max":4,"def":3,"switch":false,"choices":["1/1","1/2","1/4","1/8","1/16"]},{"id":"throwDotted","label":"Dotted","group":"throws","min":0,"max":1,"def":1,"switch":true,"choices":[]},{"id":"throwFeedback","label":"Feedback","group":"throws","min":0,"max":0.9,"def":0.5,"switch":false,"choices":[]},{"id":"throwLevel","label":"Level","group":"throws","min":0,"max":2,"def":0.9,"switch":false,"choices":[]},{"id":"throwFalloff","label":"At the entrance","group":"throws","min":0,"max":1,"def":0,"switch":false,"choices":["Gate","Duck"]},{"id":"throwFadeS","label":"Fade (s)","group":"throws","min":0.02,"max":1,"def":0.15,"switch":false,"choices":[]},{"id":"throwDarken","label":"Darken","group":"throws","min":0,"max":1,"def":1,"switch":true,"choices":[]},{"id":"gapReverbOn","label":"Gap bloom","group":"space","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"gapDuck","label":"Duck","group":"space","min":0,"max":1,"def":0.85,"switch":false,"choices":[]},{"id":"pocketOn","label":"Phase pocket","group":"space","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"pocketAmount","label":"Amount","group":"space","min":0,"max":1,"def":0.6,"switch":false,"choices":[]},{"id":"pocketAttackMs","label":"Attack","group":"space","min":5,"max":500,"def":80,"switch":false,"choices":[]},{"id":"pocketReleaseMs","label":"Release","group":"space","min":20,"max":2000,"def":350,"switch":false,"choices":[]},{"id":"fxSource","label":"Source","group":"producer","min":-1,"max":64,"def":-1,"switch":false,"choices":[]},{"id":"fxSendRevDb","label":"Into reverb","group":"producer","min":-120,"max":6,"def":-6,"switch":false,"choices":[]},{"id":"freezeOn","label":"Freeze","group":"freeze","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"freezeGaps","label":"Gaps only","group":"freeze","min":0,"max":1,"def":1,"switch":true,"choices":[]},{"id":"freezeLevel","label":"Level","group":"freeze","min":0,"max":2,"def":0.7,"switch":false,"choices":[]},{"id":"shimmerOn","label":"Shimmer","group":"shimmer","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"shimSemis","label":"Interval","group":"shimmer","min":-24,"max":24,"def":12,"switch":false,"choices":[]},{"id":"shimFormant","label":"Formant","group":"shimmer","min":-12,"max":12,"def":-2,"switch":false,"choices":[]},{"id":"shimTilt","label":"Tilt","group":"shimmer","min":-6,"max":6,"def":0,"switch":false,"choices":[]},{"id":"shimBreath","label":"Breath","group":"shimmer","min":0,"max":1,"def":0.3,"switch":false,"choices":[]},{"id":"shimInsideOut","label":"Inside-out","group":"shimmer","min":0,"max":1,"def":1,"switch":true,"choices":[]},{"id":"shimLevel","label":"Level","group":"shimmer","min":0,"max":2,"def":0.7,"switch":false,"choices":[]},{"id":"rollOn","label":"Roll","group":"roll","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"rollMode","label":"Mode","group":"roll","min":0,"max":2,"def":1,"switch":false,"choices":["Post","Pre","Both"]},{"id":"rollStartDiv","label":"Start","group":"roll","min":0,"max":6,"def":3,"switch":false,"choices":["1/1","1/2","1/4","1/8","1/16","1/32","1/64"]},{"id":"rollEndDiv","label":"End","group":"roll","min":0,"max":6,"def":6,"switch":false,"choices":["1/1","1/2","1/4","1/8","1/16","1/32","1/64"]},{"id":"rollStartMs","label":"Start (ms)","group":"roll","min":0,"max":2000,"def":0,"switch":false,"choices":[]},{"id":"rollEndMs","label":"End (ms)","group":"roll","min":0,"max":2000,"def":0,"switch":false,"choices":[]},{"id":"rollLevel","label":"Level","group":"roll","min":0,"max":2,"def":1,"switch":false,"choices":[]},{"id":"modPitch","label":"Pitch","group":"roll mods","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"modPitchA","label":"Pitch start","group":"roll mods","min":-24,"max":24,"def":0,"switch":false,"choices":[]},{"id":"modPitchB","label":"Pitch end","group":"roll mods","min":-24,"max":24,"def":12,"switch":false,"choices":[]},{"id":"modFilter","label":"Filter","group":"roll mods","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"modFilterA","label":"Filter start","group":"roll mods","min":100,"max":20000,"def":400,"switch":false,"choices":[]},{"id":"modFilterB","label":"Filter end","group":"roll mods","min":100,"max":20000,"def":16000,"switch":false,"choices":[]},{"id":"modDrive","label":"Drive","group":"roll mods","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"modDriveA","label":"Drive start","group":"roll mods","min":0,"max":1,"def":0,"switch":false,"choices":[]},{"id":"modDriveB","label":"Drive end","group":"roll mods","min":0,"max":1,"def":0.4,"switch":false,"choices":[]},{"id":"modLevel","label":"Level","group":"roll mods","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"modLevelA","label":"Level start","group":"roll mods","min":-40,"max":6,"def":-18,"switch":false,"choices":[]},{"id":"modLevelB","label":"Level end","group":"roll mods","min":-40,"max":6,"def":0,"switch":false,"choices":[]},{"id":"modGate","label":"Gate","group":"roll mods","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"modGateA","label":"Gate start","group":"roll mods","min":0.05,"max":1,"def":1,"switch":false,"choices":[]},{"id":"modGateB","label":"Gate end","group":"roll mods","min":0.05,"max":1,"def":0.3,"switch":false,"choices":[]},{"id":"modCrush","label":"Crush","group":"roll mods","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"modCrushA","label":"Crush start","group":"roll mods","min":0,"max":1,"def":0,"switch":false,"choices":[]},{"id":"modCrushB","label":"Crush end","group":"roll mods","min":0,"max":1,"def":1,"switch":false,"choices":[]},{"id":"modStereo","label":"Stereo","group":"roll mods","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"modStereoA","label":"Stereo start","group":"roll mods","min":0,"max":1,"def":0,"switch":false,"choices":[]},{"id":"modStereoB","label":"Stereo end","group":"roll mods","min":0,"max":1,"def":1,"switch":false,"choices":[]},{"id":"modReverse","label":"Reverse","group":"roll mods","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"rrOn","label":"Reverse reverb","group":"reverse reverb","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"rrSourceS","label":"Source","group":"reverse reverb","min":0.05,"max":1.5,"def":0.35,"switch":false,"choices":[]},{"id":"rrMaxPreS","label":"Swell","group":"reverse reverb","min":0.1,"max":4,"def":1.6,"switch":false,"choices":[]},{"id":"rrDecayS","label":"Decay","group":"reverse reverb","min":0.3,"max":6,"def":1.8,"switch":false,"choices":[]},{"id":"rrLandMs","label":"Landing","group":"reverse reverb","min":-100,"max":50,"def":-10,"switch":false,"choices":[]},{"id":"rrLevel","label":"Level","group":"reverse reverb","min":0,"max":2,"def":0.35,"switch":false,"choices":[]},{"id":"responseOn","label":"Call and response","group":"response","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"responseKind","label":"Answer","group":"response","min":0,"max":2,"def":0,"switch":false,"choices":["Stutter","Shimmer","Freeze"]},{"id":"responseLevel","label":"Level","group":"response","min":0,"max":2,"def":0.7,"switch":false,"choices":[]},{"id":"responseAttackMs","label":"Attack","group":"response","min":1,"max":500,"def":25,"switch":false,"choices":[]},{"id":"responseReleaseS","label":"Release","group":"response","min":0.01,"max":2,"def":0.15,"switch":false,"choices":[]},{"id":"responseBleed","label":"Bleed","group":"response","min":0,"max":1,"def":0,"switch":false,"choices":[]},{"id":"responseDuckDb","label":"Under voice","group":"response","min":-40,"max":0,"def":-6,"switch":false,"choices":[]},{"id":"ghostOn","label":"Ghost notes","group":"ghost","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"ghostRegister","label":"Interval","group":"ghost","min":-24,"max":24,"def":12,"switch":false,"choices":[]},{"id":"ghostFromKey","label":"Key chord","group":"ghost","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"ghostLevelDb","label":"Level","group":"ghost","min":-24,"max":24,"def":12,"switch":false,"choices":[]},{"id":"ghostDrive","label":"Drive","group":"ghost","min":0,"max":1,"def":0.5,"switch":false,"choices":[]},{"id":"ghostAssist","label":"Resonance","group":"ghost","min":0,"max":1,"def":0.6,"switch":false,"choices":[]},{"id":"trigSensitivity","label":"Sensitivity","group":"triggers","min":8,"max":40,"def":22,"switch":false,"choices":[]},{"id":"trigMinGapS","label":"Shortest gap","group":"triggers","min":0.03,"max":3,"def":0.15,"switch":false,"choices":[]},{"id":"trigMinPhraseS","label":"Min line","group":"triggers","min":0,"max":10,"def":0,"switch":false,"choices":[]},{"id":"trigMinEntranceDb","label":"Min entrance","group":"triggers","min":0,"max":60,"def":0,"switch":false,"choices":[]},{"id":"trigSustainedOnly","label":"Held notes only","group":"triggers","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"trigEveryN","label":"Every Nth","group":"triggers","min":1,"max":8,"def":1,"switch":false,"choices":[]},{"id":"trigProbability","label":"Chance","group":"triggers","min":0,"max":1,"def":1,"switch":false,"choices":[]},{"id":"trigDynamics","label":"Dynamics","group":"triggers","min":0,"max":1,"def":0,"switch":false,"choices":[]},{"id":"revDecayS","label":"Reverb decay","group":"returns","min":0.2,"max":10,"def":2.7,"switch":false,"choices":[]},{"id":"revLowCut","label":"Reverb low cut","group":"returns","min":20,"max":2000,"def":400,"switch":false,"choices":[]},{"id":"revHighCut","label":"Reverb high cut","group":"returns","min":1000,"max":20000,"def":9000,"switch":false,"choices":[]},{"id":"revWidth","label":"Reverb width","group":"returns","min":0,"max":1,"def":0.8,"switch":false,"choices":[]},{"id":"revLevelDb","label":"Reverb level","group":"returns","min":-60,"max":12,"def":0,"switch":false,"choices":[]},{"id":"dlyDiv","label":"Delay time","group":"returns","min":0,"max":4,"def":3,"switch":false,"choices":["1/1","1/2","1/4","1/8","1/16"]},{"id":"dlyDotted","label":"Delay dotted","group":"returns","min":0,"max":1,"def":1,"switch":true,"choices":[]},{"id":"dlyFeedback","label":"Delay feedback","group":"returns","min":0,"max":0.9,"def":0.35,"switch":false,"choices":[]},{"id":"dlyLevelDb","label":"Delay level","group":"returns","min":-60,"max":12,"def":0,"switch":false,"choices":[]},{"id":"masterDb","label":"Master","group":"master","min":-24,"max":12,"def":0,"switch":false,"choices":[]},{"id":"monoCheck","label":"Mono check","group":"monitor","min":0,"max":1,"def":0,"switch":true,"choices":[]},{"id":"bypass","label":"Original (A/B)","group":"monitor","min":0,"max":1,"def":0,"switch":true,"choices":[]}]; }
+function MOCK_PRESETS() { return [{"name":"Doubles: tight","family":"Aligned","mode":"Mixing","info":"Flam fix + split, differences kept low: one solid voice, clean in mono.","values":[["mode",0],["doublesOn",1],["flamAmount",1],["agreement",0.5],["diffSideOnly",0]]},{"name":"Doubles: wide and mono-safe","family":"Aligned","mode":"Mixing","info":"Common voice in the centre, the takes' differences in the side only: big in stereo, one clean voice in mono.","values":[["mode",0],["doublesOn",1],["flamAmount",1],["agreement",1],["diffSideOnly",1],["diffWidth",1.6]]},{"name":"Doubles: human","family":"Aligned","mode":"Mixing","info":"Half the flam fix and full differences: tighter, still loose.","values":[["mode",0],["doublesOn",1],["flamAmount",0.5],["agreement",1.3],["diffSideOnly",0]]},{"name":"Vocal space","family":"Aligned","mode":"Mixing","info":"Delay throws on phrase ends, reverb that blooms only in the gaps, and a phase pocket in the beat.","values":[["mode",0],["throwsOn",1],["gapReverbOn",1],["pocketOn",1],["pocketAmount",0.6]]},{"name":"Freeze tails","family":"Maligned","mode":"Producer","info":"The voice's spectrum held through every gap, into the reverb.","values":[["mode",1],["freezeOn",1],["freezeGaps",1],["fxSendRevDb",-6]]},{"name":"Inside-out shimmer","family":"Maligned","mode":"Producer","info":"An octave up, darker formant, breathy, only in the stereo side.","values":[["mode",1],["shimmerOn",1],["shimSemis",12],["shimFormant",-2],["shimBreath",0.3],["shimInsideOut",1]]},{"name":"Glitch entrances","family":"Maligned","mode":"Producer","info":"Pre roll into each entrance: riser, filter opening, drive and swell.","values":[["mode",1],["rollOn",1],["rollMode",1],["rollStartDiv",3],["rollEndDiv",6],["modPitch",1],["modPitchA",0],["modPitchB",12],["modFilter",1],["modDrive",1],["modDriveB",0.4],["modLevel",1],["modLevelA",-15]]},{"name":"Crushed entrances","family":"Maligned","mode":"Producer","info":"Pre roll that swells in, crushes down and spreads out across the stereo field.","values":[["mode",1],["rollOn",1],["rollMode",1],["rollStartDiv",3],["rollEndDiv",6],["modLevel",1],["modLevelA",-18],["modCrush",1],["modStereo",1]]},{"name":"Swell entrances","family":"Maligned","mode":"Producer","info":"Reverse reverb landing on every entrance.","values":[["mode",1],["rrOn",1],["rrMaxPreS",1.6]]},{"name":"Answer back","family":"Maligned","mode":"Producer","info":"The last word answers itself in the next gap from the other side.","values":[["mode",1],["responseOn",1],["responseKind",0]]},{"name":"Ghost harmony","family":"Maligned","mode":"Producer","info":"Ghost notes an octave above the voice, driven, into the reverb.","values":[["mode",1],["ghostOn",1],["ghostRegister",12],["ghostDrive",0.5],["ghostLevelDb",12]]}]; }
+</script>
+</body>
+</html>

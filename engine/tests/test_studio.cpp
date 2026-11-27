@@ -26,11 +26,12 @@ static Stereo voice(int sr, double seconds, const std::vector<std::pair<double, 
 
 int main() {
     const int sr = 44100;
+    const std::string tmp = std::filesystem::temp_directory_path().string() + "/";   // /tmp does not exist on Windows
     Log::get().setLevel(Log::Info);
     {   // 1. WAV round trip (24-bit and float)
         Stereo s(1000); for (size_t i = 0; i < 1000; ++i) { s.L[i] = (float)std::sin(i * 0.01) * 0.5f; s.R[i] = -s.L[i]; }
-        writeWav("/tmp/am_t24.wav", s, sr); writeWav("/tmp/am_tf.wav", s, sr, true);
-        Stereo a, b; WavInfo ia, ib; const bool ok = readWav("/tmp/am_t24.wav", a, ia) && readWav("/tmp/am_tf.wav", b, ib);
+        writeWav(tmp + "am_t24.wav", s, sr); writeWav(tmp + "am_tf.wav", s, sr, true);
+        Stereo a, b; WavInfo ia, ib; const bool ok = readWav(tmp + "am_t24.wav", a, ia) && readWav(tmp + "am_tf.wav", b, ib);
         double e24 = 0, ef = 0; for (size_t i = 0; i < 1000 && ok; ++i) { e24 = std::max(e24, (double)std::abs(a.L[i] - s.L[i])); ef = std::max(ef, (double)std::abs(b.R[i] - s.R[i])); }
         std::printf("    24-bit error %.2e, float error %.2e\n", e24, ef);
         check(ok && ia.bits == 24 && ib.isFloat && e24 < 1e-6 && ef == 0, "WAV: 24-bit and float files round trip");
@@ -153,17 +154,17 @@ int main() {
         check(last > 0 && sawUndo, "debug log: actions are logged with timestamps and can be read back");
     }
     {   // 9. a whole session from files: load, learn, roles, render, export
-        std::filesystem::create_directories("/tmp/am_sess"); writeWav("/tmp/am_sess/song lead.wav", lead, sr); writeWav("/tmp/am_sess/song dub L.wav", dub, sr);
+        std::filesystem::create_directories(tmp + "am_sess"); writeWav(tmp + "am_sess/song lead.wav", lead, sr); writeWav(tmp + "am_sess/song dub L.wav", dub, sr);
         Stereo beat(lead.size()); for (size_t i = 0; i < beat.size(); ++i) { const double t = (double)i / sr; const double ph = std::fmod(t, 0.5); beat.L[i] = beat.R[i] = (float)(0.5 * std::exp(-ph * 30) * std::sin(2 * M_PI * 60 * t)); }
-        writeWav("/tmp/am_sess/song instrumental.wav", beat, sr);
-        Studio st; const bool loaded = st.loadFolder("/tmp/am_sess"); st.learnAll();
+        writeWav(tmp + "am_sess/song instrumental.wav", beat, sr);
+        Studio st; const bool loaded = st.loadFolder(tmp + "am_sess"); st.learnAll();
         int leads = 0, doubles = 0, beats = 0; for (auto& t : st.state.tracks) { leads += t.role == TrackState::Lead; doubles += t.role == TrackState::Double; beats += t.role == TrackState::Beat; }
         std::printf("%s", st.summary().c_str());
         check(loaded && leads == 1 && doubles == 1 && beats == 1 && std::abs(st.bpm() - 120) < 3, "session: stems load, the double is found with its lead, the beat by name, tempo 120 BPM");
         st.applyPresetNamed("Doubles: wide and mono-safe"); st.set("rollOn", 1); st.set("rrOn", 1);
-        const auto R = st.render(); const bool ex = st.exportAll("/tmp/am_sess_out", R);
+        const auto R = st.render(); const bool ex = st.exportAll(tmp + "am_sess_out", R);
         bool finite = true; for (size_t i = 0; i < R.mix.size(); ++i) finite &= std::isfinite(R.mix.L[i]) && std::isfinite(R.mix.R[i]);
-        check(ex && finite && R.mix.peak() > 0 && std::filesystem::exists("/tmp/am_sess_out/Mix.wav") && std::filesystem::exists("/tmp/am_sess_out/FX Roll.wav"), "render + export: processed stems, effect layers and the mix are written");
+        check(ex && finite && R.mix.peak() > 0 && std::filesystem::exists(tmp + "am_sess_out/Mix.wav") && std::filesystem::exists(tmp + "am_sess_out/FX Roll.wav"), "render + export: processed stems, effect layers and the mix are written");
     }
     std::printf(fails ? "%d FAILED\n" : "all checks passed\n", fails);
     return fails ? 1 : 0;
