@@ -204,7 +204,7 @@ inline Stereo rollFx(const Stereo& x, const TrackLearn& Lr, const RollSettings& 
 }
 
 // ---------------------------------------------------------------- reverse reverb: lands exactly on each entrance
-struct ReverseReverbSettings { double sourceS = 0.35, maxPreS = 1.6, level = 0.35, decayS = 1.8, landMs = -10; bool capToGap = false; };   // landMs < 0: the swell ends that much before the voice
+struct ReverseReverbSettings { double sourceS = 0.35, maxPreS = 1.6, level = 0.35, decayS = 1.8, landMs = -10, shape = 2.0; bool capToGap = false; };   // shape: how the swell rises (1 = even, higher = later and more sudden)   // landMs < 0: the swell ends that much before the voice
 inline Stereo reverseReverbFx(const Stereo& x, const TrackLearn& L, const ReverseReverbSettings& s, int sr) {
     Reverb rv; ReverbSettings rs; rs.decayS = s.decayS; rs.lowCutHz = 300; rs.highCutHz = 12000; rs.predelayMs = 0; rs.seed = 21; rv.build(rs, sr);
     Stereo out(x.size()); const size_t Ls = (size_t)(s.sourceS * sr);
@@ -220,6 +220,7 @@ inline Stereo reverseReverbFx(const Stereo& x, const TrackLearn& L, const Revers
         const size_t f = std::min<size_t>((size_t)(0.2 * sr), pre);
         for (size_t j = 0; j < pre; ++j) {   // reversed: the end of the reversed tail lands on the entrance
             const size_t src = pre - 1 - j; double fade = 1.0; if (j < f) fade = std::pow((double)j / f, 2.0);
+            fade *= std::pow((double)(j + 1) / pre, std::max(0.0, s.shape - 2.0) * 0.5);   // shape above 2: hold back the swell until late
             out.L[land - pre + j] += (float)(wet.L[src] * fade * wgt); out.R[land - pre + j] += (float)(wet.R[src] * fade * wgt);
         }
     }

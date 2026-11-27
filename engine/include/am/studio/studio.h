@@ -184,7 +184,9 @@ public:
         if (s.freezeOn) { FreezeSettings f; f.gapsOnly = s.freezeGaps; f.level = s.freezeLevel; addLayer("Freeze", freezeFx(src, SL, f)); }
         if (s.shimmerOn) { ShimmerSettings h; h.semitones = s.shimSemis; h.formant = s.shimFormant; h.tiltDbOct = s.shimTilt; h.breath = s.shimBreath; h.insideOut = s.shimInsideOut; h.level = s.shimLevel; addLayer("Shimmer", shimmerFx(src, h, sr)); }
         if (s.rollOn) addLayer("Roll", rollFx(src, SL, rollSettings(s), s.bpm > 0 ? s.bpm : learnedBpm, sr));
-        if (s.rrOn) { ReverseReverbSettings rr; rr.sourceS = s.rrSourceS; rr.maxPreS = s.rrMaxPreS; rr.level = s.rrLevel; rr.decayS = s.rrDecayS; rr.landMs = s.rrLandMs; addLayer("Reverse reverb", reverseReverbFx(src, SL, rr, sr)); }
+        if (s.rrOn) { ReverseReverbSettings rr; rr.sourceS = s.rrSourceS; rr.maxPreS = s.rrMaxPreS; rr.level = s.rrLevel; rr.decayS = s.rrDecayS; rr.landMs = s.rrLandMs; rr.shape = s.rrShape;
+            if (s.rrSwellSync) rr.maxPreS = 4.0 / divFromIndex(s.rrSwellDiv) * 60.0 / (s.bpm > 0 ? s.bpm : learnedBpm);
+            addLayer("Reverse reverb", reverseReverbFx(src, SL, rr, sr)); }
         if (s.responseOn) { ResponseSettings rs; rs.kind = (ResponseSettings::Kind)s.responseKind; rs.level = s.responseLevel; rs.attackMs = s.responseAttackMs; rs.releaseS = s.responseReleaseS; rs.bleed = s.responseBleed; rs.bleedDuckDb = s.responseDuckDb; addLayer("Call and response", responseFx(src, SL, rs, s.bpm > 0 ? s.bpm : learnedBpm, sr)); }
         if (s.ghostOn) addLayer("Ghost notes", ghostNotes(src, SL, s));
         revIn.add(fxSum, (float)dbToGain(s.fxSendRevDb));

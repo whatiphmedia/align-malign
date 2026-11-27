@@ -125,7 +125,7 @@ private:
         else if (name == "undo") { { std::lock_guard<std::mutex> g(stateMx_); studio_.undo(); } changed(); }
         else if (name == "redo") { { std::lock_guard<std::mutex> g(stateMx_); studio_.redo(); } changed(); }
         else if (name == "relearn") {
-            const Range r{ (size_t)std::max(0.0, num("a") * studio_.sr), (size_t)std::max(0.0, num("b") * studio_.sr) }; const int track = (int)num("track", -1);
+            const am::studio::Range r{ (size_t)std::max(0.0, num("a") * studio_.sr), (size_t)std::max(0.0, num("b") * studio_.sr) }; const int track = (int)num("track", -1);
             worker_->post("re-learn section", [this, r, track] { studio_.relearnSection(r, track); }); changed();
         }
         else if (name == "logLevel") Log::get().setLevel((Log::Level)(int)num("v"));

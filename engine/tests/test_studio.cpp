@@ -88,6 +88,9 @@ int main() {
         const auto rv = reverseReverbFx(lead, L, {}, sr); double pre = 0, post = 0;
         for (size_t i = ret - sr / 5; i < ret; ++i) pre += rv.L[i] * rv.L[i]; for (size_t i = ret + 10; i < ret + sr / 5; ++i) post += rv.L[i] * rv.L[i];
         check(pre > 0 && post < pre * 1e-3, "reverse reverb: swells up to the entrance and stops there");
+        ReverseReverbSettings early; early.landMs = -100; const auto rv2 = reverseReverbFx(lead, L, early, sr); double lastBit = 0, before2 = 0;
+        for (size_t i = ret - (size_t)(0.09 * sr); i < ret; ++i) lastBit += rv2.L[i] * rv2.L[i]; for (size_t i = ret - (size_t)(0.4 * sr); i < ret - (size_t)(0.11 * sr); ++i) before2 += rv2.L[i] * rv2.L[i];
+        check(before2 > 0 && lastBit < before2 * 1e-3, "reverse reverb: Landing -100 ms ends the swell 100 ms before the voice");
     }
     {   // 6. throws live in the gaps; freeze only in the gaps
         const auto L = learnTrack(lead, sr); const auto th = throwsFx(lead, L, {}, 120, sr);

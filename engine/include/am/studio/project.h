@@ -41,7 +41,7 @@ struct ProjectState {
     int modDrive = 0; double modDriveA = 0, modDriveB = 0.4; int modLevel = 0; double modLevelA = -18, modLevelB = 0;
     int modGate = 0; double modGateA = 1, modGateB = 0.3; int modCrush = 0; double modCrushA = 0, modCrushB = 1;
     int modStereo = 0; double modStereoA = 0, modStereoB = 1; int modReverse = 0;
-    int rrOn = 0; double rrSourceS = 0.35, rrMaxPreS = 1.6, rrLevel = 0.35, rrDecayS = 1.8, rrLandMs = -10;
+    int rrOn = 0; double rrSourceS = 0.35, rrMaxPreS = 1.6, rrLevel = 0.35, rrDecayS = 1.8, rrLandMs = -10, rrShape = 2.0; int rrSwellSync = 0; double rrSwellDiv = 2;
     int responseOn = 0, responseKind = 0; double responseLevel = 0.7, responseAttackMs = 25, responseReleaseS = 0.15, responseBleed = 0, responseDuckDb = -6;
     int ghostOn = 0, ghostRegister = 12, ghostFromKey = 0; double ghostLevelDb = 12, ghostDrive = 0.5, ghostAssist = 0.6;
     // triggers (shared by the learned effects): what counts as a gap, which gaps fire, how hard
@@ -100,7 +100,8 @@ inline const std::vector<Param>& params() {
         AM_S("modStereo", "Stereo", "roll mods", modStereo), AM_P("modStereoA", "Stereo start", "roll mods", 0, 1, modStereoA), AM_P("modStereoB", "Stereo end", "roll mods", 0, 1, modStereoB),
         AM_S("modReverse", "Reverse", "roll mods", modReverse),
         AM_S("rrOn", "Reverse reverb", "reverse reverb", rrOn), AM_P("rrSourceS", "Source", "reverse reverb", 0.05, 1.5, rrSourceS), AM_P("rrMaxPreS", "Swell", "reverse reverb", 0.1, 4, rrMaxPreS),
-        AM_P("rrDecayS", "Decay", "reverse reverb", 0.3, 6, rrDecayS), AM_P("rrLandMs", "Landing", "reverse reverb", -100, 50, rrLandMs), AM_P("rrLevel", "Level", "reverse reverb", 0, 2, rrLevel),
+        AM_P("rrDecayS", "Decay", "reverse reverb", 0.3, 6, rrDecayS), AM_P("rrLandMs", "Landing", "reverse reverb", -500, 200, rrLandMs), AM_S("rrSwellSync", "Swell to tempo", "reverse reverb", rrSwellSync),
+        AM_C("rrSwellDiv", "Swell length", "reverse reverb", rrSwellDiv, "1/1", "1/2", "1/4", "1/8", "1/16"), AM_P("rrShape", "Swell shape", "reverse reverb", 1, 6, rrShape), AM_P("rrLevel", "Level", "reverse reverb", 0, 2, rrLevel),
         AM_S("responseOn", "Call and response", "response", responseOn), AM_C("responseKind", "Answer", "response", responseKind, "Stutter", "Shimmer", "Freeze"), AM_P("responseLevel", "Level", "response", 0, 2, responseLevel),
         AM_P("responseAttackMs", "Attack", "response", 1, 500, responseAttackMs), AM_P("responseReleaseS", "Release", "response", 0.01, 2, responseReleaseS),
         AM_P("responseBleed", "Bleed", "response", 0, 1, responseBleed), AM_P("responseDuckDb", "Under voice", "response", -40, 0, responseDuckDb),
