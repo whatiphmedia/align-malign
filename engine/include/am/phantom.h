@@ -347,8 +347,9 @@ private:
     bool sustain_ = false;
     double lastGain_ = 1, limEnv_ = 0, limGain_ = 1, rmsSlow_ = 1e-6;
     std::mt19937 rng_{ 1234 };
-    std::normal_distribution<double> nd_{ 0.0, 1.0 };
-    std::uniform_real_distribution<double> ud_{ 0.0, 1.0 };
+    // portable noise (std:: distributions differ between compilers; this sounds the same everywhere)
+    struct Uni { double operator()(std::mt19937& r) const { return r() / 4294967296.0; } } ud_;
+    struct Gauss { double operator()(std::mt19937& r) const { const double u1 = (r() + 1.0) / 4294967297.0, u2 = r() / 4294967296.0; return std::sqrt(-2 * std::log(u1)) * std::cos(2 * M_PI * u2); } } nd_;
     double pk_[3] = { 0, 0, 0 };
 };
 

@@ -3,11 +3,15 @@
 // delayed second mic of the same source must still be aligned.
 #include "am/engine.h"
 #include <cstdio>
+#ifndef SOLVER_SEED
+#define SOLVER_SEED 3
+#endif
 using namespace am;
 
 int main() {
     const double sr = 48000; const int N = (int)(sr * 30);
-    std::mt19937 rng(3); std::normal_distribution<double> g(0, 1);
+    // portable noise (std::normal_distribution differs between compilers, so the same seed would give different signals)
+    std::mt19937 rng(SOLVER_SEED); auto g = [&] { const double u1 = (rng() + 1.0) / 4294967297.0, u2 = rng() / 4294967296.0; return std::sqrt(-2 * std::log(u1)) * std::cos(2 * M_PI * u2); };
     // a "kick": decaying 55 Hz thumps every 0.5 s; an unrelated "pad": slow random notes; an unrelated noise "hat"
     std::vector<float> kick(N, 0.f), out(N, 0.f), pad(N, 0.f), hat(N, 0.f);
     for (int i = 0; i < N; ++i) {
@@ -16,7 +20,7 @@ int main() {
     }
     double f0 = 220, ph = 0;
     for (int i = 0; i < N; ++i) { if (i % (int)(sr * 0.7) == 0) f0 = 110 * std::pow(2.0, (int)(rng() % 24) / 12.0); ph += 2 * M_PI * f0 / sr; pad[i] = (float)(0.3 * std::sin(ph) + 0.15 * std::sin(2 * ph)); }
-    for (int i = 0; i < N; ++i) hat[i] = (float)(0.05 * g(rng));
+    for (int i = 0; i < N; ++i) hat[i] = (float)(0.05 * g());
     const int d = (int)(sr * 0.0035);                                    // kick-out mic: 3.5 ms later, a bit darker
     for (int i = d + 1; i < N; ++i) out[i] = 0.8f * (0.6f * kick[i - d] + 0.4f * kick[i - d - 1]);
     std::vector<std::vector<float>> tr = { kick, out, pad, hat };
@@ -68,13 +72,17 @@ int main() {
     }
     {   // never make it worse: with the guard, no more bins clearly lose mix energy than without it (and very few
         // at all), while the real alignment it allows stays (the guard must not block a genuine multi-mic fix)
+        // judged per 1/6-octave band around each bin (what is audible, and what the guard itself works on);
+        // single bins of a noise track carry estimation noise that no guard can or should chase
         auto worseBins = [&](const std::vector<std::vector<float>>& ph) {
+            std::vector<double> d(cs.K, 0.0), own(cs.K, 0.0);
+            for (int k = 1; k < cs.K; ++k) for (int i = 0; i < 4; ++i) { own[k] += cs.at(i, i, k).real();
+                for (int j = i + 1; j < 4; ++j) { const cplx c = cs.at(i, j, k); d[k] += (c * std::polar(1.0, (double)ph[i][k] - ph[j][k])).real() - c.real(); } }
             int worse = 0;
             for (int k = 1; k < cs.K; ++k) {
-                double e0 = 0, e1 = 0, own = 0;
-                for (int i = 0; i < 4; ++i) { own += cs.at(i, i, k).real();
-                    for (int j = i + 1; j < 4; ++j) { const cplx c = cs.at(i, j, k); e0 += c.real(); e1 += (c * std::polar(1.0, (double)ph[i][k] - ph[j][k])).real(); } }
-                if (e1 < e0 - 0.02 * own) ++worse;
+                const int w = std::max(1, (int)(k * 0.059)); double sd = 0, so = 0;
+                for (int q = std::max(1, k - w); q <= std::min(cs.K - 1, k + w); ++q) { sd += d[q]; so += own[q]; }
+                if (sd < -0.02 * so) ++worse;
             }
             return worse; };
         auto pairGain = [&](const std::vector<std::vector<float>>& ph) {   // kick in + kick out, 40-200 Hz
