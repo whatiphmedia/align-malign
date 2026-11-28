@@ -36,7 +36,7 @@ jobs:
         run: cmake -B build -S . -A x64 -DALIGNMALIGN_BUILD_TESTS=ON
 
       - name: Build
-        run: cmake --build build --config Release --parallel --target am_engine_test am_convolver_test am_latency_test am_groups_test am_solver_test am_phantom_test am_studio_test amsession AlignMalign_VST3 AlignMalign_Standalone AutoMalignStudio
+        run: cmake --build build --config Release --parallel --target am_engine_test am_convolver_test am_latency_test am_groups_test am_solver_test am_phantom_test am_studio_test am_twotrack_test amsession twotrack AlignMalign_VST3 AlignMalign_Standalone AutoMalignStudio
 
       - name: Engine tests
         run: |
@@ -47,6 +47,7 @@ jobs:
           build\Release\am_solver_test.exe
           build\Release\am_phantom_test.exe
           build\Release\am_studio_test.exe
+          build\Release\am_twotrack_test.exe
 
       - name: Package
         shell: pwsh
@@ -57,6 +58,7 @@ jobs:
           Copy-Item "$art/Standalone/Auto Malign.exe" "dist/Auto Malign (standalone).exe"
           Copy-Item "build/AutoMalignStudio_artefacts/Release/Auto Malign Studio.exe" "dist/Auto Malign Studio.exe"
           Copy-Item "build/Release/amsession.exe" "dist/amsession.exe"
+          Copy-Item "build/Release/twotrack.exe" "dist/twotrack.exe"
           Copy-Item docs/INSTALL.md dist/INSTALL.md
           New-Item -ItemType Directory -Force "dist/Ableton Live control surface/AutoMalign" | Out-Null
           Copy-Item live/AutoMalign/__init__.py "dist/Ableton Live control surface/AutoMalign/__init__.py"
