@@ -55,6 +55,7 @@ static std::vector<float> convolve(const std::vector<float>& x, const std::vecto
 }
 
 static std::vector<Stereo> g_stems;
+static Stereo g_orig;   // the plain sum, for deltas
 static void render(const std::string& path, const CrossSpectra& cs, const std::vector<std::vector<float>>* ph, double refRms, int sr) {
     Stereo mix; mix.L.assign(g_stems[0].size(), 0.f); mix.R = mix.L;
     for (size_t t = 0; t < g_stems.size(); ++t) {
@@ -66,10 +67,19 @@ static void render(const std::string& path, const CrossSpectra& cs, const std::v
     }
     double e = 0; for (size_t i = 0; i < mix.size(); ++i) e += mix.L[i] * mix.L[i] + mix.R[i] * mix.R[i];
     const double rms = std::sqrt(e / (2.0 * mix.size()));
-    const double g = refRms > 0 ? refRms / rms : 1.0;
+    const double g = refRms > 0 && !getenv("AM_NOMATCH") ? refRms / rms : 1.0;
     for (size_t i = 0; i < mix.size(); ++i) { mix.L[i] *= (float)g; mix.R[i] *= (float)g; }
     writeWav(path, mix, sr, true);
     std::printf("   wrote %s (%+.2f dB level trim)\n", path.c_str(), 20 * std::log10(g));
+    if (!ph) { g_orig = mix; return; }
+    if (getenv("AM_DELTA") && g_orig.size() == mix.size()) {   // processed - original: what the processing added / took away
+        Stereo d = mix;
+        for (size_t i = 0; i < d.size(); ++i) { d.L[i] -= g_orig.L[i]; d.R[i] -= g_orig.R[i]; }
+        std::string dp = path; dp.insert(dp.size() - 4, "_DELTA");
+        writeWav(dp, d, sr, true);
+        double e = 0; for (size_t i = 0; i < d.size(); ++i) e += d.L[i] * d.L[i] + d.R[i] * d.R[i];
+        std::printf("   wrote %s (delta RMS %.1f dB vs mix)\n", dp.c_str(), 10 * std::log10(e / (2.0 * d.size()) + 1e-30) - 20 * std::log10(rms * g));
+    }
 }
 
 int main(int argc, char** argv) {

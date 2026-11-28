@@ -108,7 +108,8 @@ inline ProfileSet profilesFor(const SolveSettings& st) {
     const double lo = std::clamp(st.loHz, 2.7, 200.0), hi = std::clamp(st.hiHz, std::max(lo * 2, 200.0), 4000.0);
     ProfileSet p;
     p.aS.fLo = lo; p.aS.fHi = hi; p.aS.fTaper = std::min(4400.0, hi * 1.5); p.aS.pull = 0.5 * k; p.aS.guard = st.guard;
-    p.mS = p.aS; p.mS.anti = true; p.mS.guard = false; p.mS.pull = 0.15 * k;
+    p.aS.maxGdMs = 15.0;   // drums (Red Baron): 15 ms lets room mics line up in the low end; no losing bands, user approved by ear
+    p.mS = p.aS; p.mS.anti = true; p.mS.guard = false; p.mS.pull = 0.15 * k; p.mS.maxGdMs = 10.0;
     p.mS.fHi = std::min(4000.0, hi * 1.5); p.mS.fTaper = std::min(4400.0, p.mS.fHi * 1.47);
     p.aE = p.aS; p.aE.fHi = 4000; p.aE.fTaper = 4400; p.aE.pull = 0.3 * k; p.aE.maxGdMs = 15.0;
     p.mE = p.aE; p.mE.anti = true; p.mE.guard = false; p.mE.pull = 0.1 * k;
@@ -116,7 +117,7 @@ inline ProfileSet profilesFor(const SolveSettings& st) {
     return p;
 }
 
-inline Profile alignStandard() { return {}; }
+inline Profile alignStandard() { Profile p; p.maxGdMs = 15.0; return p; }
 inline Profile malignStandard() { Profile p; p.anti = true; p.fHi = 1500; p.fTaper = 2200; p.pull = 0.15; return p; }
 inline Profile alignExtended() { Profile p; p.pull = 0.3; p.fHi = 4000; p.fTaper = 4400; p.maxGdMs = 15.0; return p; }
 inline Profile malignExtended() { Profile p = alignExtended(); p.anti = true; p.pull = 0.1; return p; }
