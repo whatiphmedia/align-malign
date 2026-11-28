@@ -221,9 +221,10 @@ inline std::vector<std::vector<float>> solve(const CrossSpectra& cs, int anchor,
         for (int t = 0; t < T; ++t) out[t][k] = (float)th[t];
     }
 
-    // 2) unwrap, smooth (energy weighted, same bandwidth), cap the time shift, taper
+    // 2) unwrap and smooth (energy weighted, same bandwidth): the target curve per track
     const double maxStep = 2 * M_PI * cs.binHz * p.maxGdMs * 1e-3;
-    std::vector<double> u(K), sm(K);
+    std::vector<std::vector<double>> tgt(T, std::vector<double>(K, 0.0)), wt(T, std::vector<double>(K, 0.0));
+    std::vector<double> u(K);
     for (int t = 0; t < T; ++t) {
         u[0] = 0;
         for (int k = 1; k < K; ++k) u[k] = u[k - 1] + std::remainder((double)out[t][k] - (k > 1 ? out[t][k - 1] : 0.0), 2 * M_PI);
@@ -232,67 +233,90 @@ inline std::vector<std::vector<float>> solve(const CrossSpectra& cs, int anchor,
             const double w = (k >= 1 ? cs.at(t, t, k).real() : 0.0) + 1e-30;
             pw[k + 1] = pw[k] + w; pu[k + 1] = pu[k] + w * u[k];
         }
-        for (int k = 0; k < K; ++k) { int lo, hi; win(std::max(1, k), lo, hi); sm[k] = (pu[hi + 1] - pu[lo]) / (pw[hi + 1] - pw[lo]); }
-        sm[0] = 0;
-        // start from zero at the bottom and follow the smoothed curve no faster than maxGdMs allows
-        double cur = 0;
-        for (int k = 1; k < K; ++k) {
-            cur += std::clamp(sm[k] - cur, -maxStep, maxStep);
-            out[t][k] = (float)(cur * taperWeight(p, k * cs.binHz));
-        }
+        double band = 0; int nb = 0;
+        for (int k = 1; k < K; ++k) { int lo, hi; win(k, lo, hi); tgt[t][k] = (pu[hi + 1] - pu[lo]) / (pw[hi + 1] - pw[lo]);
+            wt[t][k] = (pw[hi + 1] - pw[lo]) / (hi - lo + 1); if (taperWeight(p, k * cs.binHz) > 0) { band += wt[t][k]; ++nb; } }
+        band = nb && band > 0 ? band / nb : 1.0;
+        for (int k = 1; k < K; ++k) wt[t][k] = std::sqrt(wt[t][k] / band);   // amplitude-like weight: quiet regions still count a little
     }
 
-    // 3) never make it worse (align): where the correction would clearly lose mix energy (more than 1% of the
-    //    tracks' own energy there), scale it back by the amount that keeps the most gain. The choices are smoothed
-    //    across frequency and kept within the time-shift cap in both directions. A single pass: small, harmless
-    //    losses are left alone, so one marginal band can't shut down its neighbours.
+    // 3) fit each track's curve to its target as closely as possible (circular error, weighted by the track's own
+    //    level) while never moving any frequency by more than maxGdMs in time. Solved exactly (Viterbi over phase
+    //    states), so a steep step in the target - a polarity flip, a resonance - is crossed the short way round
+    //    instead of leaving the rest of the band lagging behind. Outside the band the curve is held at 0; in the
+    //    taper it is drawn towards 0. hold[k] (0..1, the guard) draws it towards 0 as well.
+    const int S = std::clamp((int)std::ceil(2 * M_PI / std::max(maxStep, 1e-9) * 8), 64, 1024);
+    const int reach = std::clamp((int)std::floor(maxStep / (2 * M_PI / S)), 1, S / 2 - 1);
+    std::vector<double> cosS(S), sinS(S);
+    for (int n = 0; n < S; ++n) { cosS[n] = std::cos(2 * M_PI * n / S); sinS[n] = std::sin(2 * M_PI * n / S); }
+    auto fit = [&](int t, const std::vector<double>& hold, std::vector<float>& res) {
+        res.assign(K, 0.f);
+        if (t == anchor) return;
+        std::vector<double> cost(S, 0.0), next(S), dq(S);
+        std::vector<uint16_t> from((size_t)K * S, 0);
+        for (int n = 1; n < S; ++n) cost[n] = 1e30;                       // starts at 0 below the band
+        for (int k = 1; k < K; ++k) {
+            const double tw = taperWeight(p, k * cs.binHz);
+            const double wT = tw * (1.0 - hold[k]) * wt[t][k];
+            const double w0 = tw <= 0 ? 1e6 : (1.0 - tw) * 4.0 + hold[k] * 4.0 * (0.25 + wt[t][k]);
+            const double c = std::cos(tgt[t][k]), sn = std::sin(tgt[t][k]);
+            // min over the reachable window (prev state within +-reach, circular)
+            for (int n = 0; n < S; ++n) {
+                double best = 1e300; int arg = n;
+                for (int d = -reach; d <= reach; ++d) { const int m = (n + d + S) % S; if (cost[m] < best) { best = cost[m]; arg = m; } }
+                const double e = wT * (1.0 - (cosS[n] * c + sinS[n] * sn)) + w0 * (1.0 - cosS[n]);
+                next[n] = best + e; from[(size_t)k * S + n] = (uint16_t)arg;
+            }
+            std::swap(cost, next);
+        }
+        int n = (int)(std::min_element(cost.begin(), cost.end()) - cost.begin());
+        for (int k = K - 1; k >= 1; --k) { res[k] = (float)std::remainder(2 * M_PI * n / S, 2 * M_PI); n = from[(size_t)k * S + n]; }
+    };
+    const std::vector<double> none(K, 0.0);
+    for (int t = 0; t < T; ++t) fit(t, none, out[t]);
+
+    // 4) never make it worse (align): judge the finished curves by what they do to the mix, per band (the same
+    //    smoothed cross-spectra the solve used). Where a band still clearly loses (more than 1% of the tracks' own
+    //    energy there), every track is drawn back towards as recorded around it and the curves are refitted. A
+    //    result only replaces the previous one if it scores better overall, so the guard can never end up worse
+    //    than no guard.
     if (p.guard && !p.anti) {
-        const std::vector<std::vector<float>> full = out;
-        auto gainAt = [&](double sc, int k, double& own) {   // smoothed mix energy change at bin k with sc x correction
-            int lo, hi; win(k, lo, hi);
-            double e0 = 0, e1 = 0; own = 0;
-            for (int i = 0; i < T; ++i) {
-                own += (pre[pid(i, i)][hi + 1] - pre[pid(i, i)][lo]).real();
-                for (int j = i + 1; j < T; ++j) {
-                    const cplx c = pre[pid(i, j)][hi + 1] - pre[pid(i, j)][lo];
-                    e0 += c.real();
-                    e1 += (c * std::polar(1.0, sc * ((double)full[i][k] - full[j][k]))).real();
+        auto measure = [&](const std::vector<std::vector<float>>& ph, std::vector<double>& g, std::vector<double>& own) {
+            g.assign(K, 0.0); own.assign(K, 0.0);
+            for (int k = 1; k < K; ++k) {
+                int lo, hi; win(k, lo, hi);
+                for (int i = 0; i < T; ++i) {
+                    own[k] += (pre[pid(i, i)][hi + 1] - pre[pid(i, i)][lo]).real();
+                    for (int j = i + 1; j < T; ++j) {
+                        const cplx c = pre[pid(i, j)][hi + 1] - pre[pid(i, j)][lo];
+                        g[k] += 2 * ((c * std::polar(1.0, (double)ph[i][k] - ph[j][k])).real() - c.real());
+                    }
                 }
             }
-            return 2 * (e1 - e0);
         };
-        std::vector<double> sc(K, 1.0);
-        for (int k = 1; k < K; ++k) {
-            double own = 0;
-            if (gainAt(1.0, k, own) >= -0.01 * own) continue;          // fine, or only a negligible loss
-            double best = 0, bestG = 0;
-            for (double c : { 0.25, 0.5, 0.75 }) { double o; const double g = gainAt(c, k, o); if (g > bestG) { bestG = g; best = c; } }
-            sc[k] = best;
-        }
-        auto build = [&](const std::vector<double>& scale) {
-        std::vector<double> ps(K + 1, 0.0);
-        for (int k = 0; k < K; ++k) ps[k + 1] = ps[k] + scale[k];
-        for (int t = 0; t < T; ++t) {
-            std::vector<double> tgt(K, 0.0);
-            for (int k = 1; k < K; ++k) { int lo, hi; win(k, lo, hi); tgt[k] = full[t][k] * std::min(scale[k], (ps[hi + 1] - ps[lo]) / (hi - lo + 1)); }
-            // follow the target within the time-shift cap, forwards then backwards (so fades start before a dip)
-            double cur = 0;
-            for (int k = 1; k < K; ++k) { cur += std::clamp(tgt[k] - cur, -maxStep, maxStep); tgt[k] = cur; }
-            for (int k = K - 2; k >= 1; --k) tgt[k] = std::clamp(tgt[k], tgt[k + 1] - maxStep, tgt[k + 1] + maxStep);
-            for (int k = 1; k < K; ++k) out[t][k] = (float)tgt[k];
-        }
+        auto score = [&](const std::vector<double>& g, const std::vector<double>& own) {
+            double sc = 0;
+            for (int k = 1; k < K; ++k) if (own[k] > 0) { const double r = g[k] / own[k]; sc += r < -0.01 ? 4 * r : r; }
+            return sc;
         };
-        build(sc);
-        // check pass: anything that still clearly loses (the smoothing or the cap can cause it) goes back to as
-        // recorded, and the result is rebuilt once
-        auto lossAt = [&](int k) { int lo, hi; win(k, lo, hi); double e0 = 0, e1 = 0, own = 0;
-            for (int i = 0; i < T; ++i) { own += (pre[pid(i, i)][hi + 1] - pre[pid(i, i)][lo]).real();
-                for (int j = i + 1; j < T; ++j) { const cplx c = pre[pid(i, j)][hi + 1] - pre[pid(i, j)][lo];
-                    e0 += c.real(); e1 += (c * std::polar(1.0, (double)out[i][k] - out[j][k])).real(); } }
-            return 2 * (e1 - e0) < -0.01 * own; };
-        bool again = false;
-        for (int k = 1; k < K; ++k) if (lossAt(k)) { sc[k] = 0; again = true; }
-        if (again) build(sc);
+        std::vector<double> g, own, hold(K, 0.0);
+        measure(out, g, own);
+        double bestScore = score(g, own);
+        auto best = out;
+        for (int it = 0; it < 4; ++it) {
+            bool any = false;
+            for (int k = 1; k < K; ++k) if (own[k] > 0 && g[k] < -0.01 * own[k]) {
+                int lo, hi; win(k, lo, hi); any = true;
+                for (int q = lo; q <= hi; ++q) hold[q] = std::min(1.0, hold[q] + 0.5);
+            }
+            if (!any) break;
+            std::vector<std::vector<float>> cand(T);
+            for (int t = 0; t < T; ++t) fit(t, hold, cand[t]);
+            measure(cand, g, own);
+            const double sc = score(g, own);
+            if (sc > bestScore) { bestScore = sc; best = cand; }
+        }
+        out = std::move(best);
     }
     return out;
 }

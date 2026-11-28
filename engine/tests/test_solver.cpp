@@ -95,7 +95,8 @@ int main() {
         const auto pOn = solve(cs, autoAnchor(cs), profilesFor(on).aS), pOff = solve(cs, autoAnchor(cs), profilesFor(off).aS);
         const int wOn = worseBins(pOn), wOff = worseBins(pOff);
         std::printf("bins clearly worse: guard on %d, guard off %d (of %d); kick pair gain guard on %+.2f dB, off %+.2f dB\n", wOn, wOff, cs.K, pairGain(pOn), pairGain(pOff));
-        // at most 1% of bands may lose >2% (MSVC: 7 of 1538 with the guard, 0 without; GCC 0 / 0): known sensitivity, see docs
+        // at most 1% of bands may lose >2%. Guard v2 keeps a guarded result only if it measures better than the unguarded
+        // one, so it should never add losing bands (GCC: 0 / 0)
         check(wOn <= wOff + cs.K / 100 && wOn <= cs.K / 100, "never make it worse: at most 1% of bands lose with the guard, and not many more than without it");
         check(pairGain(pOn) > pairGain(pOff) - 0.5, "never make it worse doesn't block a real alignment");
     }
